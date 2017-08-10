@@ -76,7 +76,7 @@ public class Main extends javax.swing.JFrame implements ActionListener {
         };
 
         // The timer; can set as low as you want.
-        timer = new Timer(67, this);
+        timer = new Timer(13, this);
 
         // Initializing.
         list = new ArrayList();
@@ -87,7 +87,7 @@ public class Main extends javax.swing.JFrame implements ActionListener {
         final Class closs = getClass();
 
         // Original.
-        example = copyImage(kit.createImage(closs.getResource("example4.png")), this, BufferedImage.TYPE_INT_ARGB);
+        example = copyImage(kit.createImage(closs.getResource("mwolf2.png")), this, BufferedImage.TYPE_INT_ARGB);
 
         // Our working copy.
         test = copyImage(example, this, BufferedImage.TYPE_INT_ARGB);
@@ -179,17 +179,25 @@ public class Main extends javax.swing.JFrame implements ActionListener {
 
                     /// WE NEED THIS. It's going to clear those pesky pixels that aren't really visible
                     // but the isTransparent will still detect them.
-                    // It's an eraser with a size of 3.
-                    for (int size = 0; size < 3; size++) {
-                        img.setRGB(i, j, clear);
-                        img.setRGB(i - size, j, clear);
-                        img.setRGB(i, j - size, clear);
-                        img.setRGB(i - size, j - size, clear);
-                        img.setRGB(i + size, j - size, clear);
-                        img.setRGB(i + size, j, clear);
-                        img.setRGB(i + size, j + size, clear);
-                        img.setRGB(i, j + size, clear);
-                        img.setRGB(i - 1, j + 1, clear);
+                    int max=3;
+                    
+                    // It's an eraser with a size of 3-to-1.
+                    for (int size = 0; size < max; size++) {
+                        try {
+                            img.setRGB(i, j, clear);
+                            img.setRGB(i - size, j, clear);
+                            img.setRGB(i, j - size, clear);
+                            img.setRGB(i - size, j - size, clear);
+                            img.setRGB(i + size, j - size, clear);
+                            img.setRGB(i + size, j, clear);
+                            img.setRGB(i + size, j + size, clear);
+                            img.setRGB(i, j + size, clear);
+                            img.setRGB(i - 1, j + 1, clear);
+                        } catch (ArrayIndexOutOfBoundsException aioobe) {
+                            max--;
+                            // @DEBUG
+                            //System.out.println("Eraser Size: " + max);
+                        }
                     }
                 }
             }
