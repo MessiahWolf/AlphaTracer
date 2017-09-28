@@ -1,7 +1,17 @@
 /*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
+    Copyright 2017 Robert Cherry
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
  */
 package tracer;
 
@@ -12,59 +22,62 @@ import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.Point;
 import java.awt.Polygon;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.awt.image.ImageObserver;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
-import tracer.ImageTracer.ColorPointPair;
 
 /**
  *
- * @author Robert A. Cherry (MessiahWolf@gmail.com) You can use or sample if you
- * give original credit to me and don't distribute for monetary gains. Make sure
- * they give the credit to me. MUHAHAHAH! In memory of Manny.
+ * @author Robert Cherry (MessiahWolf)
  */
 public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
     // Variable Declaration
     // Project Classes
-    private ImageTracer tracer;
+    private AlphaTracer tracer;
     // Java Swing Classes
     private JPanel panel;
     private Timer timer;
+    private Point mousePos;
     // Java Native Classes
-    private ArrayList<Polygon> polyList;
-    private BufferedImage origImage;
-    private BufferedImage traceImage;
-    private BufferedImage progImage;
+    private BufferedImage selImage;
+    private Color textileBackground = Color.LIGHT_GRAY;
+    private Color textileForeground = Color.WHITE;
     private Image imageFrame16;
     private Image imageFrame32;
-    private ImageIcon iconContinuous;
+    private ImageIcon iconImport;
+    private ImageIcon iconImportOver;
+    private ImageIcon iconError;
     private ImageIcon iconPause;
     private ImageIcon iconPlay;
-    private ImageIcon iconPolygon;
     private ImageIcon iconRefresh;
     private ImageIcon iconRefreshOver;
-    private ImageIcon iconSingle;
-    private Polygon poly;
+    private ImageIcon iconHorizontal;
+    private ImageIcon iconVertical;
     // Data Types
-    private int maxX;
-    private int yPixel;
-    private int transPixel;
+    private boolean hoverHorizontal = false;
+    private boolean hoverVertical = false;
     // End of Variable Declaration
 
     public static void main(String[] args) {
-        TracerJFrame main = new TracerJFrame();
+        final TracerJFrame main = new TracerJFrame();
         main.setVisible(true);
     }
 
@@ -98,64 +111,134 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 // Cast to 2D for easier polygon rendering.
                 final Graphics2D manet = (Graphics2D) monet;
 
-                // Draw the image under
-                manet.drawImage(progImage == null ? traceImage : progImage, 0, 0, this);
-                manet.setColor(Color.BLACK);
+                // Draw textile background for whatever reason. Don't know if i completely
+                // enjoy the look it gives.
+                drawTextileBackground(manet);
 
-                // Draw those polygons over.
-                for (Polygon poly : polyList) {
-                    manet.fill(poly);
+                //
+                if (tracer != null) {
+
+                    // Draw the image under
+                    manet.drawImage(tracer.isFinished() || !tracer.hasStarted() ? tracer.getTraceImage() : tracer.getProgressImage(), 0, 0, this);
+                    manet.setColor(Color.BLACK);
+
+                    // Draw those polygons over.
+                    for (Polygon poly : tracer.getPolygonList()) {
+
+                        if (poly.contains(mousePos)) {
+                            manet.fill(poly);
+                        } else {
+                            manet.draw(poly);
+                        }
+                    }
+
+                    //
+                    if (hoverHorizontal || hoverVertical) {
+
+                        // Hover line
+                        final Point[] points = hoverHorizontal
+                                ? tracer.getHorizontalLineTrace(tracer.getOriginalImage(), mousePos) : tracer.getVerticalLineTrace(tracer.getOriginalImage(), mousePos);
+                        manet.setColor(Color.BLACK);
+
+                        // Drawing the line to indicate the cut
+                        if (points[0] != null && points[1] != null) {
+
+                            //
+                            if (hoverHorizontal) {
+                                manet.drawLine(points[0].x, points[0].y, points[1].x, points[0].y);
+                            } else if (hoverVertical) {
+                                manet.drawLine(points[0].x, points[0].y, points[0].x, points[1].y);
+                            }
+
+                            // If either is true.
+                            //
+                            manet.setColor(Color.BLACK);
+                            manet.fillOval(points[0].x - 2, points[0].y - 2, 4, 4);
+                            manet.fillOval(points[1].x - 2, points[1].y - 2, 4, 4);
+                        }
+                    }
                 }
             }
         };
+        panel.addMouseMotionListener(new MouseAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent evt) {
+                mousePos = evt.getPoint();
+                repaint();
+            }
+        });
+        panel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent evt) {
+                if (evt.getButton() == MouseEvent.BUTTON1) {
+                    //tracer.addVerticalLine(evt.getPoint());
+                    if (hoverHorizontal) {
+                        tracer.addHorizontalLine(evt.getPoint());
+                        hoverVertical = false;
+                    } else if (hoverVertical) {
+                        tracer.addVerticalLine(evt.getPoint());
+                        hoverHorizontal = false;
+                    }
+                } else if (evt.getButton() == MouseEvent.BUTTON3) {
+                    hoverVertical = false;
+                    hoverHorizontal = false;
+                }
+
+                //
+                repaint();
+            }
+        });
 
         // The timer; can set as low as you want.
-        timer = new Timer(19, this);
-
-        // Initializing.
-        polyList = new ArrayList();
-        poly = new Polygon();
+        timer = new Timer(4, this);
+        mousePos = new Point();
 
         // My probably inefficient way of getting images that will soon be deprecated.
         final Toolkit kit = Toolkit.getDefaultToolkit();
         final Class closs = getClass();
 
         // Original.
-        origImage = copyImage(kit.createImage(closs.getResource("/samples/example2.png")), this, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage origImage = AlphaTracer.bufferImage(kit.createImage(closs.getResource("/samples/example9.png")), this, BufferedImage.TYPE_INT_ARGB);
 
         // Icons.
-        iconContinuous = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-continuous24.png")));
-        iconPolygon = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-body24.png")));
+        iconError = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-error16.png")));
         iconPlay = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-play24.png")));
         iconPause = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-pause24.png")));
         iconRefresh = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-refresh24.png")));
         iconRefreshOver = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-refresh-roll24.png")));
-        iconSingle = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-single24.png")));
+        iconImport = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-import24.png")));
+        iconImportOver = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-import-roll24.png")));
+        iconHorizontal = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-line-horizontal24.png")));
+        iconVertical = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-line-vertical24.png")));
         imageFrame16 = kit.createImage(closs.getResource("/icons/icon-frame16.png"));
         imageFrame32 = kit.createImage(closs.getResource("/icons/icon-frame32.png"));
-        
-        // Our working copy.
-        traceImage = copyImage(origImage, this, BufferedImage.TYPE_INT_ARGB);
 
         // The magic itself.
-        tracer = new ImageTracer(traceImage);
-        
+        tracer = new AlphaTracer(origImage);
+
         //
         final ArrayList<Image> frameList = new ArrayList();
         frameList.add(imageFrame16);
         frameList.add(imageFrame32);
-        
+
         // Change frame images.
         setIconImages(frameList);
 
         // Icon setting
-        nextJButton.setIcon(iconPlay);
-        nextJButton.setEnabled(false);
-        acquireJButton.setIcon(iconPolygon);
+        playJButton.setIcon(iconPlay);
         refreshJButton.setIcon(iconRefreshOver);
         refreshJButton.setRolloverIcon(iconRefresh);
-        contJToggle.setSelectedIcon(iconContinuous);
-        contJToggle.setIcon(iconSingle);
+        horizontalJButton.setIcon(iconHorizontal);
+        verticalJButton.setIcon(iconVertical);
+        errorJButton.setIcon(iconError);
+        importJButton.setIcon(iconImport);
+        importJButton.setRolloverIcon(iconImportOver);
+
+        //
+        transJSlider.setValue(tracer.getTransparencyThreshold());
+
+        // Update JLabel
+        polygonJLabel.setText("Polygons: " + tracer.getPolygonList().size());
 
         // Setting up the viewport for scrolling if nessecary.
         mainJScrollPane.setViewportView(panel);
@@ -195,7 +278,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 if (file.getAbsolutePath().toLowerCase().endsWith(".png")) {
 
                     //
-                    final BufferedImage image = copyImage(kit.createImage(file.getAbsolutePath()), this, BufferedImage.TYPE_INT_ARGB);
+                    final BufferedImage image = AlphaTracer.bufferImage(kit.createImage(file.getAbsolutePath()), this, BufferedImage.TYPE_INT_ARGB);
 
                     // Attempt to create image from it.
                     final ImageButton button = new ImageButton(this, image, file.getName());
@@ -207,354 +290,138 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
                     //
                     imageJPanel.add(button);
+
+                    //
+                    selImage = image;
                 }
             }
         }
-    }
-
-    private int findStartPoint() {
-
-        // Store some values for use
-        final int iWidth = traceImage.getWidth(this);
-        final int iHeight = traceImage.getHeight(this);
-
-        // Always reset.
-        maxX = -1;
-        yPixel = 0;
-
-        // Go down y-coord and sweep left for first non-trans pixel then right for first non-trans pixel.
-        for (yPixel = 0; yPixel < iHeight - 1; yPixel++) {
-
-            // Now from the other side
-            for (int x = iWidth - 1; x >= 0; x--) {
-
-                // If the current pixel is not transparent.
-                if (!isTransparent(traceImage.getRGB(x, yPixel))) {
-
-                    // Very important; without this variable we have nothing.
-                    maxX = x;
-
-                    // The magic.
-                    tracer = new ImageTracer(traceImage);
-                    tracer.init(new Point(maxX, yPixel));
-
-                    // @DEBUG
-                    //System.out.println("New MaxX: " + maxX + " Y: " + yPixel);
-                    // Return
-                    return maxX;
-                }
-            }
-
-            // When we're at the end of the image and have nothing.
-            if (yPixel >= iHeight - 1 && maxX <= 0) {
-                return -2;
-            }
-        }
-
-        // @DEBUG
-//        if (maxX == -1) {
-//            System.err.println("Image must be clear.");
-//        }
-        return maxX;
-    }
-
-    // Method to remove all single pixels with nothing around them
-    private BufferedImage destroyAllIslands(BufferedImage img) {
-
-        // Clear color
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
-
-        //
-        for (int i = 0; i < img.getWidth(); i++) {
-
-            //
-            for (int j = 0; j < img.getHeight(); j++) {
-
-                //
-                int p = img.getRGB(i, j);
-                int point = 0;
-
-                // Question the pixel
-                if (!isTransparent(p)) {
-                    try {
-
-                        // Current Pixel
-                        if (isTransparent(img.getRGB(i, j))) {
-                            point++;
-                        }
-                        // Pixel to the Right
-                        if (isTransparent(img.getRGB(i + 1, j))) {
-                            point++;
-                        }
-                        // Pixel Bottom Right
-                        if (isTransparent(img.getRGB(i + 1, j + 1))) {
-                            point++;
-                        }
-                        // Pixel to the Bottom
-                        if (isTransparent(img.getRGB(i, j + 1))) {
-                            point++;
-                        }
-                        // Pixel to the Bottom Left
-                        if (isTransparent(img.getRGB(i - 1, j + 1))) {
-                            point++;
-                        }
-                        // Pixel to the left.
-                        if (isTransparent(img.getRGB(i - 1, j))) {
-                            point++;
-                        }
-                        // Pixel Top Left
-                        if (isTransparent(img.getRGB(i - 1, j - 1))) {
-                            point++;
-                        }
-                        // Pixel Above
-                        if (isTransparent(img.getRGB(i, j - 1))) {
-                            point++;
-                        }
-                        // Pixel Top Right
-                        if (isTransparent(img.getRGB(i + 1, j - 1))) {
-                            point++;
-                        }
-
-                        // if 75% are invisible then remove the pixel
-                        if (point >= 6) {
-                            img.setRGB(i, j, clear);
-                        }
-                    } catch (ArrayIndexOutOfBoundsException aioobe) {
-                        //
-                    }
-                }
-            }
-        }
-
-        //
-        return img;
-    }
-
-    private BufferedImage clearRegionFromImage(BufferedImage img, Polygon region) {
-
-        // Clear color
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
-        int max = 3;
-
-        // GET RID OF IT.
-        for (int i = 0; i < img.getWidth(); i++) {
-
-            // Going over every pixel.
-            for (int j = 0; j < img.getHeight(); j++) {
-
-                // If the image has a point that the polygon has (inefficient i know; will optimize later)
-                if (region.contains(i, j)) {
-
-                    /* 
-                        WE NEED THIS. It's going to clear those pesky pixels that aren't really visible
-                        but the isTransparent will still detect them because our detection algorithm
-                        isn't the best.
-                     */
-                    // It's an eraser with a size of 1-3.
-                    for (int size = 1; size < max; size++) {
-                        try {
-
-                            // Current Pixel
-                            img.setRGB(i, j, clear);
-                            // Pixel to the Right
-                            img.setRGB(i + size, j, clear);
-                            // Pixel Bottom Right
-                            img.setRGB(i + size, j + size, clear);
-                            // Pixel to the Bottom
-                            img.setRGB(i, j + size, clear);
-                            // Pixel to the Bottom Left
-                            img.setRGB(i - size, j + size, clear);
-                            // Pixel to the left.
-                            img.setRGB(i - size, j, clear);
-                            // Pixel Top Left
-                            img.setRGB(i - size, j - size, clear);
-                            // Pixel Above
-                            img.setRGB(i, j - size, clear);
-                            // Pixel Top Right
-                            img.setRGB(i + size, j - size, clear);
-                        } catch (ArrayIndexOutOfBoundsException aioobe) {
-                            max--;
-                            // @DEBUG
-                            //System.out.println("Eraser Size: " + max);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Return the new image.
-        return img;
     }
 
     private void changeImage(BufferedImage image) {
-        
-        // Erase the current inprogress polygon
-        poly.reset();
-        
+
+        //
+        selImage = image;
+
         // Stop the timer
         timer.stop();
 
         //
+        tracer = new AlphaTracer(image);
+        tracer.setTransparencyThreshold(transJSlider.getValue());
+
+        // Enabled refresh because the timer is stopped.
         refreshJButton.setEnabled(true);
-        acquireJButton.setEnabled(false);
-        nextJButton.setEnabled(false);
+        horizontalJButton.setEnabled(true);
+        verticalJButton.setEnabled(true);
+        playJButton.setEnabled(true);
 
-        // Find and set.
-        origImage = copyImage(image, this, BufferedImage.TYPE_INT_ARGB);
+        // Update JLabel
+        polygonJLabel.setText("Polygons: " + tracer.getPolygonList().size());
+
+        // Change size of viewport
+        panel.setPreferredSize(new Dimension(image.getWidth(), image.getHeight()));
+        panel.setMinimumSize(new Dimension(image.getWidth(), image.getHeight()));
+        panel.setMaximumSize(new Dimension(image.getWidth(), image.getHeight()));
+        mainJScrollPane.setViewportView(panel);
 
         //
-        traceImage = copyImage(origImage, this, BufferedImage.TYPE_INT_ARGB);
-        progImage = copyImage(origImage, this, BufferedImage.TYPE_INT_ARGB);
-
-        //
-        tracer = new ImageTracer(traceImage);
-
-        //
-        polyList.clear();
-
         //
         repaint();
-    }
-
-    private BufferedImage copyImage(Image source, ImageObserver obs, int type) {
-
-        //
-        int iWidth = source.getWidth(obs);
-        int iHeight = source.getHeight(obs);
-
-        // Try to force it this way
-        if (iWidth <= 0 || iHeight <= 0) {
-            final ImageIcon icon = new ImageIcon(source);
-            iWidth = icon.getIconWidth();
-            iHeight = icon.getIconHeight();
-        }
-
-        // Shell for the new BufferedImage
-        final BufferedImage output = new BufferedImage(iWidth, iHeight, type);
-
-        // Create the raster space
-        final Graphics2D manet = output.createGraphics();
-
-        // Draw the image and then Close it
-        manet.drawImage(source, 0, 0, obs);
-        manet.dispose();
-
-        //
-        return output;
-    }
-
-    // Tests if the pixel has transparency of 3 or less.
-    private boolean isTransparent(int testPixel) {
-        return ((testPixel >> 24) & 0xFF) <= transPixel;
     }
 
     @Override
     public void actionPerformed(ActionEvent evt) {
 
-        //
-        doWork();
-    }
-
-    private void doWork() {
+        // Step
+        tracer.step();
 
         //
-        if (maxX > -1) {
+        if (tracer.isFinished()) {
 
-            // Grab the next (first) point.
-            ColorPointPair cpp = tracer.getNextOpenSpace();
+            //
+            timer.stop();
+            playJButton.setIcon(iconPlay);
+            refreshJButton.setEnabled(true);
 
-            // While the ImageTracer isn't in no-man's-land.
-            while (cpp != null) {
-
-                // We use more than once so a variable.
-                final Point point = cpp.point();
-
-                // This will be in the ImageTracer soon.
-                if (!isTransparent(cpp.rgb())) {
-
-                    // Next Chosen point
-                    if (progImage != null) {
-
-                        // Draw a blue dot at the next point on the in-progress image.
-                        progImage.setRGB(point.x, point.y, (new Color(0, 0, 255, 255)).getRGB());
-                    }
-
-                    // Add the polygon point.
-                    poly.addPoint(point.x, point.y);
-
-                    // Paint god dammit.
-                    repaint();
-
-                    // Then break out.
-                    break;
-                }
-
-                // Go after.
-                cpp = tracer.getNextOpenSpace();
+            // Show the message
+            if (tracer.getMessage() != null) {
+                errorJButton.setEnabled(true);
+                errorJButton.setToolTipText(tracer.getMessage());
+            } else {
+                errorJButton.setEnabled(false);
+                errorJButton.setToolTipText("Finished without Error.");
             }
+
+            // Set Traces to false
+            hoverHorizontal = false;
+            hoverVertical = false;
         }
 
-        // This signifies the end of a polygon.
-        if (tracer.getNextOpenSpace() == null) {
+        //
+        repaint();
 
-            // Add the start point because usually, if not always, it's not added at the beginning.
-            if (!poly.contains(maxX, yPixel)) {
-                poly.addPoint(maxX, yPixel);
-            }
+        // Update JLabel
+        polygonJLabel.setText("Polygons: " + tracer.getPolygonList().size());
+    }
 
-            // Add to the list of polygons
-            polyList.add(poly);
+    private void drawTextileBackground(Graphics2D manet) {
 
-            /*
-                Clear the pixels for that polygon from the image that so we don't process that region of the image again
-                over and over.
-             */
-            traceImage = clearRegionFromImage(traceImage, poly);
-            progImage.flush();
-            progImage = copyImage(traceImage, this, BufferedImage.TYPE_INT_ARGB);
+        //
+        final JScrollPane parentPane = (JScrollPane) panel.getParent().getParent();
 
-            // Our end result we've strived so desperately for.
-            poly = new Polygon();
+        //
+        final int rowSplit = 16;
+        final int colSplit = 16;
 
-            // Attempt to find the next polygon by getting the new maxX.
-            final int result = findStartPoint();
+        //
+        final int parentWidth = parentPane == null ? getWidth() : parentPane.getWidth();
+        final int parentHeight = parentPane == null ? getHeight() : parentPane.getHeight();
 
-            // Repaint for the people of Tamriel.
-            repaint();
+        //
+        final int imageWidth = getPreferredSize().width;
+        final int imageHeight = getPreferredSize().height;
 
-            // -1 means this line might be transparent, but -2
-            // means we're at the end of the image and nothing is found.
-            // @RECURSION
-            if (contJToggle.isSelected()) {
+        //
+        final int width = parentWidth > imageWidth ? parentWidth : imageWidth;
+        final int height = parentHeight > imageHeight ? parentHeight : imageHeight;
 
-                // If we potentially have more to go; keep going as long as the toggle is selected.
-                if (result < 0) {
+        //
+        final int rowExtra = 2;
+        final int colExtra = 2;
 
-                    //
-                    timer.stop();
-                    nextJButton.setEnabled(false);
-                    nextJButton.setIcon(iconPlay);
+        // Calc. Rows and columns
+        final int rows = (width / rowSplit) + rowExtra;
+        final int cols = (height / colSplit) + colExtra;
 
-                    //
-                    acquireJButton.setEnabled(false);
-                    refreshJButton.setEnabled(true);
+        // Initial color
+        Color color = textileForeground;
+
+        // Drawing the rectangles.
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+
+                // Alternating colors (Took a lot of playing around to get to this code)
+                // @Ternary Option
+                color = color == textileBackground ? textileForeground : textileBackground;
+
+                // Giving it a little offset in columns
+                if (j % 2 == 0) {
+                    if (j == cols) {
+                        //@Ternary Option
+                        color = color == textileForeground ? textileBackground : textileForeground;
+                    }
+                } else if (j == cols - 1) {
+                    //@Ternary Option
+                    color = color == textileForeground ? textileBackground : textileForeground;
                 }
-            } else {
 
-                //
-                //System.err.println("Result(MaxX): " + maxX + " Y: " + yPixel);
-                // Stop the timer and disable the nextJButton; we have nothing else to find.
-                timer.stop();
-                nextJButton.setEnabled(result > -1);
-                nextJButton.setIcon(iconPlay);
+                // Set the color
+                manet.setColor(color);
 
-                //
-                acquireJButton.setEnabled(result > -1);
-                refreshJButton.setEnabled(true);
+                // Fill the rectangle
+                manet.fill(new Rectangle(i * 16, j * 16, 16, 16));
             }
-
-            // Update JLabel
-            polygonJLabel.setText("Polygons: " + polyList.size());
         }
     }
 
@@ -569,22 +436,29 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
         mainJScrollPane = new javax.swing.JScrollPane();
         buttonJPanel = new javax.swing.JPanel();
-        acquireJButton = new javax.swing.JButton();
-        filler2 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
-        contJToggle = new javax.swing.JToggleButton();
-        filler3 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
         refreshJButton = new javax.swing.JButton();
+        filler6 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
+        horizontalJButton = new javax.swing.JButton();
+        filler7 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
+        verticalJButton = new javax.swing.JButton();
+        filler2 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
+        jSeparator1 = new javax.swing.JSeparator();
+        importJButton = new javax.swing.JButton();
         filler1 = new javax.swing.Box.Filler(new java.awt.Dimension(0, 0), new java.awt.Dimension(0, 0), new java.awt.Dimension(32767, 0));
+        errorJButton = new javax.swing.JButton();
+        filler5 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
         polygonJLabel = new javax.swing.JLabel();
         filler4 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
-        nextJButton = new javax.swing.JButton();
-        transJSlider = new javax.swing.JSlider();
+        playJButton = new javax.swing.JButton();
+        imageJScrollPane = new javax.swing.JScrollPane();
         imageJPanel = new javax.swing.JPanel();
-        jLabel1 = new javax.swing.JLabel();
+        jPanel1 = new javax.swing.JPanel();
+        transJLabel = new javax.swing.JLabel();
+        filler3 = new javax.swing.Box.Filler(new java.awt.Dimension(0, 0), new java.awt.Dimension(0, 0), new java.awt.Dimension(32767, 0));
+        transJSlider = new javax.swing.JSlider();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setMinimumSize(new java.awt.Dimension(306, 388));
-        setResizable(false);
 
         mainJScrollPane.setToolTipText("");
         mainJScrollPane.setMaximumSize(new java.awt.Dimension(238, 202));
@@ -592,30 +466,6 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         mainJScrollPane.setPreferredSize(new java.awt.Dimension(238, 202));
 
         buttonJPanel.setLayout(new javax.swing.BoxLayout(buttonJPanel, javax.swing.BoxLayout.LINE_AXIS));
-
-        acquireJButton.setToolTipText("Acquire Polygon");
-        acquireJButton.setMaximumSize(new java.awt.Dimension(24, 24));
-        acquireJButton.setMinimumSize(new java.awt.Dimension(24, 24));
-        acquireJButton.setPreferredSize(new java.awt.Dimension(24, 24));
-        acquireJButton.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                acquireJButtonActionPerformed(evt);
-            }
-        });
-        buttonJPanel.add(acquireJButton);
-        buttonJPanel.add(filler2);
-
-        contJToggle.setToolTipText("Capture Single Polygon");
-        contJToggle.setMaximumSize(new java.awt.Dimension(24, 24));
-        contJToggle.setMinimumSize(new java.awt.Dimension(24, 24));
-        contJToggle.setPreferredSize(new java.awt.Dimension(24, 24));
-        contJToggle.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                contJToggleActionPerformed(evt);
-            }
-        });
-        buttonJPanel.add(contJToggle);
-        buttonJPanel.add(filler3);
 
         refreshJButton.setToolTipText("Reset Image");
         refreshJButton.setMaximumSize(new java.awt.Dimension(24, 24));
@@ -627,56 +477,128 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
             }
         });
         buttonJPanel.add(refreshJButton);
+        buttonJPanel.add(filler6);
+
+        horizontalJButton.setToolTipText("Add a Horizontal cut to the Image");
+        horizontalJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        horizontalJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        horizontalJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        horizontalJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                horizontalJButtonActionPerformed(evt);
+            }
+        });
+        buttonJPanel.add(horizontalJButton);
+        buttonJPanel.add(filler7);
+
+        verticalJButton.setToolTipText("Add a Vertical cut to the Image");
+        verticalJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        verticalJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        verticalJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        verticalJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                verticalJButtonActionPerformed(evt);
+            }
+        });
+        buttonJPanel.add(verticalJButton);
+        buttonJPanel.add(filler2);
+
+        jSeparator1.setOrientation(javax.swing.SwingConstants.VERTICAL);
+        jSeparator1.setMaximumSize(new java.awt.Dimension(8, 24));
+        jSeparator1.setMinimumSize(new java.awt.Dimension(8, 24));
+        jSeparator1.setPreferredSize(new java.awt.Dimension(8, 24));
+        buttonJPanel.add(jSeparator1);
+
+        importJButton.setToolTipText("Import a PNG Image");
+        importJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        importJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        importJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        importJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                importJButtonActionPerformed(evt);
+            }
+        });
+        buttonJPanel.add(importJButton);
         buttonJPanel.add(filler1);
 
+        errorJButton.setToolTipText("No Errors");
+        errorJButton.setEnabled(false);
+        errorJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        errorJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        errorJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        errorJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                errorJButtonActionPerformed(evt);
+            }
+        });
+        buttonJPanel.add(errorJButton);
+        buttonJPanel.add(filler5);
+
         polygonJLabel.setText("Polygons:");
+        polygonJLabel.setToolTipText("How many Polygons this Image contains");
         polygonJLabel.setMaximumSize(new java.awt.Dimension(72, 24));
         polygonJLabel.setMinimumSize(new java.awt.Dimension(72, 24));
         polygonJLabel.setPreferredSize(new java.awt.Dimension(72, 24));
         buttonJPanel.add(polygonJLabel);
         buttonJPanel.add(filler4);
 
-        nextJButton.setToolTipText("Polygonize (Visual)");
-        nextJButton.setMaximumSize(new java.awt.Dimension(24, 24));
-        nextJButton.setMinimumSize(new java.awt.Dimension(24, 24));
-        nextJButton.setPreferredSize(new java.awt.Dimension(24, 24));
-        nextJButton.addActionListener(new java.awt.event.ActionListener() {
+        playJButton.setToolTipText("Polygonize (Visual)");
+        playJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        playJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        playJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        playJButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                nextJButtonActionPerformed(evt);
+                playJButtonActionPerformed(evt);
             }
         });
-        buttonJPanel.add(nextJButton);
+        buttonJPanel.add(playJButton);
 
+        imageJScrollPane.setHorizontalScrollBarPolicy(javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        imageJScrollPane.setToolTipText("Select a sample Image");
+        imageJScrollPane.setVerticalScrollBarPolicy(javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+
+        imageJPanel.setPreferredSize(new java.awt.Dimension(32, 202));
+        imageJPanel.setLayout(new javax.swing.BoxLayout(imageJPanel, javax.swing.BoxLayout.Y_AXIS));
+        imageJScrollPane.setViewportView(imageJPanel);
+
+        jPanel1.setLayout(new javax.swing.BoxLayout(jPanel1, javax.swing.BoxLayout.LINE_AXIS));
+
+        transJLabel.setText("Polygon Precision:");
+        transJLabel.setToolTipText("How close should the Polygon hug the Image");
+        transJLabel.setMaximumSize(new java.awt.Dimension(124, 24));
+        transJLabel.setMinimumSize(new java.awt.Dimension(124, 24));
+        transJLabel.setPreferredSize(new java.awt.Dimension(124, 24));
+        jPanel1.add(transJLabel);
+        jPanel1.add(filler3);
+
+        transJSlider.setMaximum(64);
+        transJSlider.setMinorTickSpacing(8);
+        transJSlider.setPaintTicks(true);
         transJSlider.setToolTipText("Transparency Threshold");
-        transJSlider.setValue(3);
+        transJSlider.setValue(16);
+        transJSlider.setMaximumSize(new java.awt.Dimension(32767, 24));
+        transJSlider.setMinimumSize(new java.awt.Dimension(36, 24));
+        transJSlider.setPreferredSize(new java.awt.Dimension(200, 24));
         transJSlider.addChangeListener(new javax.swing.event.ChangeListener() {
             public void stateChanged(javax.swing.event.ChangeEvent evt) {
                 transJSliderStateChanged(evt);
             }
         });
-
-        imageJPanel.setPreferredSize(new java.awt.Dimension(32, 202));
-        imageJPanel.setLayout(new javax.swing.BoxLayout(imageJPanel, javax.swing.BoxLayout.PAGE_AXIS));
-
-        jLabel1.setText("Transparency:");
+        jPanel1.add(transJSlider);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+            .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                    .addComponent(buttonJPanel, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
-                    .addGroup(javax.swing.GroupLayout.Alignment.LEADING, layout.createSequentialGroup()
-                        .addComponent(mainJScrollPane, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(imageJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addGap(0, 0, Short.MAX_VALUE))
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(buttonJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
                     .addGroup(layout.createSequentialGroup()
-                        .addComponent(jLabel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(transJSlider, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                        .addComponent(imageJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(jPanel1, javax.swing.GroupLayout.DEFAULT_SIZE, 361, Short.MAX_VALUE))
                 .addContainerGap())
         );
         layout.setVerticalGroup(
@@ -684,12 +606,10 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(imageJPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                    .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, 247, Short.MAX_VALUE)
+                    .addComponent(imageJScrollPane))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                    .addComponent(transJSlider, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(jLabel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                .addComponent(jPanel1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(buttonJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addContainerGap())
@@ -698,106 +618,220 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
-    private void nextJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_nextJButtonActionPerformed
+    private void playJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_playJButtonActionPerformed
         // DO IT!!!
         if (timer.isRunning()) {
             timer.stop();
-            nextJButton.setIcon(iconPlay);
+            playJButton.setIcon(iconPlay);
         } else {
             timer.start();
-            nextJButton.setIcon(iconPause);
+            playJButton.setIcon(iconPause);
             refreshJButton.setEnabled(false);
-            acquireJButton.setEnabled(false);
+            horizontalJButton.setEnabled(false);
+            verticalJButton.setEnabled(false);
+        }
+
+        //
+        if (tracer.isFinished()) {
+            tracer.reset();
+            timer.start();
+        }
+
+        // Show the message
+        if (tracer.getMessage() != null) {
+            errorJButton.setEnabled(true);
+            errorJButton.setToolTipText(tracer.getMessage());
+        } else {
+            errorJButton.setEnabled(false);
+            errorJButton.setToolTipText("Finished without Error.");
         }
 
         //
         repaint();
-    }//GEN-LAST:event_nextJButtonActionPerformed
-
-    private void acquireJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_acquireJButtonActionPerformed
-        // Null case
-        if (traceImage == null) {
-            return;
-        }
-
-        //
-        traceImage = destroyAllIslands(traceImage);
-
-        // To show the progress; only reason we have it.
-        progImage = copyImage(traceImage, this, BufferedImage.TYPE_INT_ARGB);
-
-        // Get the new maxX and yPixel; those are the only two we care about.
-        final int result = findStartPoint();
-
-        // Updating controls.
-        polygonJLabel.setText("Polygons: " + polyList.size());
-
-        // More control updating
-        if (result > -1) {
-
-            // Once we have points enable the button.
-            nextJButton.setEnabled(true);
-        }
-
-        // DO IT!!!
-        if (timer.isRunning()) {
-            timer.stop();
-            nextJButton.setIcon(iconPlay);
-        }
-
-        // Paint damn you.
-        repaint();
-    }//GEN-LAST:event_acquireJButtonActionPerformed
+    }//GEN-LAST:event_playJButtonActionPerformed
 
     private void transJSliderStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_transJSliderStateChanged
         // TODO add your handling code here:
-        if (!transJSlider.getValueIsAdjusting()) {
-            transPixel = transJSlider.getValue();
-        }
-    }//GEN-LAST:event_transJSliderStateChanged
+        if (tracer != null) {
 
-    private void contJToggleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_contJToggleActionPerformed
-        //
-        contJToggle.setToolTipText(contJToggle.isSelected() ? "Continuously Capture" : "Capture Single Polygon");
-    }//GEN-LAST:event_contJToggleActionPerformed
+            //
+            if (!transJSlider.getValueIsAdjusting()) {
+
+                //
+                final int val = transJSlider.getValue();
+                final int max = transJSlider.getMaximum();
+
+                //
+                tracer.setTransparencyThreshold(val);
+
+                // If it's been run at least once with the current image.
+                // Do the automatic Polygon acquisition.
+                if (tracer.hasStarted()) {
+
+                    // No longer need the timer running
+                    timer.stop();
+
+                    // Grab polygons
+                    tracer.reset();
+                    tracer.flash();
+
+                    // Show the message
+                    if (tracer.getMessage() != null) {
+                        errorJButton.setEnabled(true);
+                        errorJButton.setToolTipText(tracer.getMessage());
+                    } else {
+                        errorJButton.setEnabled(false);
+                        errorJButton.setToolTipText("Finished without Error.");
+                    }
+
+                    // Paint the picture.
+                    repaint();
+                }
+
+                // Just describes how tight the tracer will stick to the image.
+                if (val < 24) {
+                    transJSlider.setToolTipText("Informal Handshake");
+                } else if (val >= 24 && val < 48) {
+                    transJSlider.setToolTipText("Weak Hug");
+                } else if (val >= 48 && val < 64) {
+                    transJSlider.setToolTipText("Warm Embrace");
+                } else if (val >= 64) {
+                    transJSlider.setToolTipText("Never Let Go Hug");
+                }
+
+                //
+                transJLabel.setText("Polygon Precision: " + ((val * 100) / max) + "%");
+            }
+        }
+
+        // Update JLabel
+        polygonJLabel.setText(
+                "Polygons: " + tracer.getPolygonList().size());
+    }//GEN-LAST:event_transJSliderStateChanged
 
     private void refreshJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_refreshJButtonActionPerformed
         // Stop the timer.
         timer.stop();
-
-        // Return the test image to the example.
-        progImage = null;
-        traceImage = copyImage(origImage, this, BufferedImage.TYPE_INT_ARGB);
-
-        // Clear the polygons.
-        polyList.clear();
+        tracer.reset(selImage);
 
         // Update buttons.
-        nextJButton.setIcon(iconPlay);
-        nextJButton.setEnabled(false);
-        acquireJButton.setEnabled(true);
+        playJButton.setIcon(iconPlay);
+        playJButton.setEnabled(true);
+        horizontalJButton.setEnabled(true);
+        verticalJButton.setEnabled(true);
 
         // Update JLabel
-        polygonJLabel.setText("Polygons: " + polyList.size());
+        polygonJLabel.setText("Polygons: " + tracer.getPolygonList().size());
+
+        // Show the message
+        if (tracer.getMessage() != null) {
+            errorJButton.setEnabled(true);
+            errorJButton.setToolTipText(tracer.getMessage());
+        } else {
+            errorJButton.setEnabled(false);
+            errorJButton.setToolTipText("Finished without Error.");
+        }
 
         // Repaint.
         repaint();
     }//GEN-LAST:event_refreshJButtonActionPerformed
+
+    private void errorJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_errorJButtonActionPerformed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_errorJButtonActionPerformed
+
+    private void horizontalJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_horizontalJButtonActionPerformed
+        // TODO add your handling code here:
+        hoverHorizontal = true;
+        hoverVertical = false;
+        repaint();
+    }//GEN-LAST:event_horizontalJButtonActionPerformed
+
+    private void verticalJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_verticalJButtonActionPerformed
+        // TODO add your handling code here:
+        hoverVertical = true;
+        hoverHorizontal = false;
+        repaint();
+    }//GEN-LAST:event_verticalJButtonActionPerformed
+
+    private void importJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_importJButtonActionPerformed
+        // TODO add your handling code here:
+        final JFileChooser chooser = new JFileChooser();
+
+        //
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+
+            // Then file
+            final File file = chooser.getSelectedFile();
+
+            //
+            if (file != null && file.getAbsolutePath().toLowerCase().endsWith("png")) {
+
+                try {
+
+                    //
+                    final BufferedImage image = AlphaTracer.bufferImage(ImageIO.read(file.getAbsoluteFile()), this, BufferedImage.TYPE_INT_ARGB);
+
+                    // Attempt to create image from it.
+                    final ImageButton button = new ImageButton(this, image, file.getName());
+
+                    //
+                    button.setPreferredSize(new Dimension(32, 32));
+                    button.setMaximumSize(new Dimension(32, 32));
+                    button.setMinimumSize(new Dimension(32, 32));
+
+                    //
+                    final Dimension d = imageJPanel.getSize();
+
+                    //
+                    imageJPanel.add(button);
+                    imageJPanel.setPreferredSize(new Dimension(d.width, d.height + 32));
+                    imageJPanel.setMaximumSize(imageJPanel.getPreferredSize());
+                    imageJPanel.setMinimumSize(imageJPanel.getPreferredSize());
+                    imageJPanel.revalidate();
+
+                    //
+                    imageJScrollPane.setViewportView(imageJPanel);
+                    imageJScrollPane.revalidate();
+
+                    //
+                    selImage = image;
+
+                    // The magic itself.
+                    tracer = new AlphaTracer(selImage);
+                    tracer.setTransparencyThreshold(transJSlider.getValue());
+
+                    //
+                    repaint();
+                } catch (IOException ioe) {
+
+                }
+            }
+        }
+    }//GEN-LAST:event_importJButtonActionPerformed
     // Variables declaration - do not modify//GEN-BEGIN:variables
-    private javax.swing.JButton acquireJButton;
     private javax.swing.JPanel buttonJPanel;
-    private javax.swing.JToggleButton contJToggle;
+    private javax.swing.JButton errorJButton;
     private javax.swing.Box.Filler filler1;
     private javax.swing.Box.Filler filler2;
     private javax.swing.Box.Filler filler3;
     private javax.swing.Box.Filler filler4;
+    private javax.swing.Box.Filler filler5;
+    private javax.swing.Box.Filler filler6;
+    private javax.swing.Box.Filler filler7;
+    private javax.swing.JButton horizontalJButton;
     private javax.swing.JPanel imageJPanel;
-    private javax.swing.JLabel jLabel1;
+    private javax.swing.JScrollPane imageJScrollPane;
+    private javax.swing.JButton importJButton;
+    private javax.swing.JPanel jPanel1;
+    private javax.swing.JSeparator jSeparator1;
     private javax.swing.JScrollPane mainJScrollPane;
-    private javax.swing.JButton nextJButton;
+    private javax.swing.JButton playJButton;
     private javax.swing.JLabel polygonJLabel;
     private javax.swing.JButton refreshJButton;
+    private javax.swing.JLabel transJLabel;
     private javax.swing.JSlider transJSlider;
+    private javax.swing.JButton verticalJButton;
     // End of variables declaration//GEN-END:variables
 
     private class ImageButton extends JButton implements ActionListener {
@@ -816,8 +850,8 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
             //
             this.frame = frame;
-            this.image = image;
-            
+            this.image = AlphaTracer.bufferImage(image, null, BufferedImage.TYPE_INT_ARGB);
+
             //
             super.setToolTipText(text);
 
@@ -831,7 +865,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
             final BufferedImage bi = new BufferedImage(28, 28, BufferedImage.TYPE_INT_ARGB);
             final Graphics2D manet = bi.createGraphics();
             manet.setRenderingHints(new RenderingHints(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY));
-            manet.drawImage(image, 0, 0, 28, 28, null);
+            manet.drawImage(image, 0, 0, 24, 24, null);
             manet.dispose();
 
             //
