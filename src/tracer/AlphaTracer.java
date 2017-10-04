@@ -89,7 +89,7 @@ public class AlphaTracer {
         final int clear = (new Color(0, 0, 0, 0)).getRGB();
 
         //lineList.add(getVerticalLineTrace(img, pos));
-        if (pos.x >= 0 && pos.y >= 0 && pos.x < traceImage.getWidth() - 1 && pos.y < traceImage.getHeight() - 1) {
+        if (pos.x >= 0 && pos.y >= 0 && pos.x <= traceImage.getWidth() - 1 && pos.y <= traceImage.getHeight() - 1) {
 
             //
             final Point[] points = getVerticalLineTrace(traceImage, pos);
@@ -101,7 +101,7 @@ public class AlphaTracer {
                 final int distY = points[1].y - points[0].y;
 
                 //
-                for (int i = 0; i < distY; i++) {
+                for (int i = 0; i <= distY; i++) {
 
                     //
                     traceImage.setRGB(pos.x, points[0].y + i, clear);
@@ -147,7 +147,7 @@ public class AlphaTracer {
 
         //
         origImage = destroyAllIslands(image);
-        
+
         //
         pointList.clear();
 
@@ -165,6 +165,12 @@ public class AlphaTracer {
         //
         finished = false;
         started = false;
+        
+        // Previous and Curpoint reset
+        curPos = new Point();
+        initPos = new Point();
+        previousPoint = null;
+        lastStartPoint = null;
 
         //
         message = null;
@@ -335,7 +341,7 @@ public class AlphaTracer {
                     curPos = new Point(maxX, yPixel);
 
                     //
-                    if (lastStartPoint != null && lastStartPoint.equals(curPos) && started) {
+                    if (lastStartPoint != null && lastStartPoint.equals(curPos)) {
                         message = "Failed to acquire Polygon. Try again.";
                         finished = true;
                         return;
@@ -350,7 +356,7 @@ public class AlphaTracer {
                     lastIndex = 0;
 
                     // @DEBUG
-                    //System.out.println("New MaxX: " + maxX + " Y: " + yPixel);
+                    System.out.println("New MaxX: " + maxX + " Y: " + yPixel);
                     // Return
                     return;
                 }
@@ -488,22 +494,23 @@ public class AlphaTracer {
         // Then return nothing.
         return null;
     }
-    
+
     public Polygon getSelectedPolygon(Point pos) {
-        
+
         // Grab the first polygon detected to contains the Point::pos
         for (Polygon p : polyList) {
             if (p.contains(pos)) {
                 return p;
             }
         }
-        
+
         // Otherwise return nothing
         return null;
     }
 
-    /** Buffer those normal Images.
-     * 
+    /**
+     * Buffer those normal Images.
+     *
      * @param source The Source Image
      * @param obs Typical Image Observer, you can just use 'null' usually.
      * @param type BufferedImage type.
@@ -537,11 +544,12 @@ public class AlphaTracer {
     }
 
     /**
-     *  Removes pixels that would keep the tracer from completing it's cycle. Any pixels
-     * that are just 1x1 in space or a little bigger or just hanging off the edge awkwardly.
+     * Removes pixels that would keep the tracer from completing it's cycle. Any
+     * pixels that are just 1x1 in space or a little bigger or just hanging off
+     * the edge awkwardly.
      *
      * @param img The source Image
-     * @return  the source image with hanging pixels removed.
+     * @return the source image with hanging pixels removed.
      */
     private BufferedImage destroyAllIslands(BufferedImage img) {
 
@@ -615,10 +623,12 @@ public class AlphaTracer {
     }
 
     /**
-     *  Clears the shape of the given polygon from the image
+     * Clears the shape of the given polygon from the image
+     *
      * @param img The source image
      * @param region The polygon shape to use
-     * @return The source image with the pixels inside the bounds of the polygon, removed.
+     * @return The source image with the pixels inside the bounds of the
+     * polygon, removed.
      */
     private BufferedImage clearRegionFromImage(BufferedImage img, Polygon region) {
 
@@ -682,27 +692,37 @@ public class AlphaTracer {
         final Point[] point = new Point[2];
 
         //
-        int y1, my;
+        int y1, mx, my;
 
         //
+        mx = (mouse.x > img.getWidth() - 1 || mouse.x < 0) ? img.getWidth() - 1 : mouse.x;
         my = (mouse.y > img.getHeight() - 1 || mouse.y < 0) ? img.getHeight() - 1 : mouse.y;
 
         // Finding the top point.
         for (y1 = my; y1 >= 0; y1--) {
 
-            //
-            if (isTransparent(img.getRGB(mouse.x > img.getWidth() - 1 ? img.getWidth() - 1 : mouse.x, y1))) {
-                point[0] = new Point(mouse.x > img.getWidth() - 1 ? img.getWidth() - 1 : mouse.x, y1);
+            // So essential go up from the mouse.y until we hit transparency
+            if (isTransparent(img.getRGB(mx, y1))) {
+                point[0] = new Point(mx, y1);
                 break;
             }
         }
-        
-        //
+
+        // If we found a top point; the alternate case is that the image is all color on the y-axis at x.
         if (point[0] != null) {
-            for (int y2 = my; y2 <= img.getHeight() - 1; y2++) {
-                if (isTransparent(img.getRGB(mouse.x > img.getWidth() - 1 ? img.getWidth() - 1 : mouse.x, y2))) {
-                    point[1] = new Point(mouse.x > img.getWidth() - 1 ? img.getWidth() - 1 : mouse.x, y2);
+
+            //
+            for (int y2 = (y1 + 1) > img.getHeight() - 1 ? img.getHeight() - 1 : y1 + 1; y2 <= img.getHeight() - 1; y2++) {
+
+                // Now go down from y1 until we hit transparency again.
+                if (isTransparent(img.getRGB(mx, y2))) {
+                    point[1] = new Point(mx, y2);
                     break;
+                }
+
+                //
+                if (y2 == img.getHeight() - 1) {
+                    point[1] = new Point(mx, y2);
                 }
             }
         }
@@ -717,27 +737,29 @@ public class AlphaTracer {
         final Point[] point = new Point[2];
 
         //
-        int x1, mx;
+        int x1, mx, my;
 
         //
         mx = (mouse.x > img.getWidth() - 1 || mouse.x < 0) ? img.getWidth() - 1 : mouse.x;
+        my = (mouse.y > img.getHeight() - 1 || mouse.y < 0) ? img.getHeight() - 1 : mouse.y;
 
         //
         for (x1 = mx; x1 >= 0; x1--) {
 
             //
-            if (isTransparent(img.getRGB(x1, mouse.y > img.getHeight() - 1 ? img.getHeight() - 1 : mouse.y))) {
-                point[0] = new Point(x1, mouse.y);
+            if (isTransparent(img.getRGB(x1, my))) {
+                point[0] = new Point(x1, my);
                 break;
             }
         }
-
-        //
+        
         //
         if (point[0] != null) {
-            for (int x2 = mx; x2 <= img.getWidth() - 1; x2++) {
-                if (isTransparent(img.getRGB(x2, mouse.y > img.getHeight() - 1 ? img.getHeight() - 1 : mouse.y))) {
-                    point[1] = new Point(x2, mouse.y);
+            
+            //
+            for (int x2 = x1 + 1 > img.getWidth() - 1 ? img.getWidth() - 1 : x1 + 1; x2 <= img.getWidth() - 1; x2++) {
+                if (isTransparent(img.getRGB(x2, my))) {
+                    point[1] = new Point(x2, my);
                     break;
                 }
             }
@@ -749,16 +771,20 @@ public class AlphaTracer {
 
     // This pixel must be within the image bounds ; returns the rgb at point as well.
     private int testPixel(BufferedImage img, int x, int y) {
-        return x < img.getWidth() && y < img.getHeight() && x >= 0 && y >= 0 ? img.getRGB(x, y) : 0;
+        return x <= img.getWidth()-1 && y <= img.getHeight()-1 && x >= 0 && y >= 0 ? img.getRGB(x, y) : 0;
     }
 
     // Checking if the test point is within bounds; convience method.
     private boolean isPixel(BufferedImage img, Point point) {
-        return point.x < img.getWidth() && point.y < img.getHeight() && point.x >= 0 && point.y >= 0;
+        return point.x <= img.getWidth()-1 && point.y <= img.getHeight()-1 && point.x >= 0 && point.y >= 0;
     }
 
     private boolean isTransparent(int testPixel) {
-        return ((testPixel >> 24) & 0xFF) <= transPixel;
+        return isTransparent(testPixel, transPixel);
+    }
+
+    private boolean isTransparent(int testPixel, int thresh) {
+        return ((testPixel >> 24) & 0xFF) <= thresh;
     }
 
     public boolean isFinished() {
