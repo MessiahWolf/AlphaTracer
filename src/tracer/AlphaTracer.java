@@ -41,6 +41,7 @@ public class AlphaTracer {
     private BufferedImage origImage;
     private BufferedImage traceImage;
     private BufferedImage progImage;
+    private final int clear = (new Color(0, 0, 0, 0)).getRGB();
     private Point curPos;
     private Point initPos;
     private Point previousPoint;
@@ -50,11 +51,13 @@ public class AlphaTracer {
     private int maxX;
     private int yPixel;
     private int transPixel = 8;
+    private int curPoints;
     private String message = null;
     // Data Types
     private boolean started = false;
     private boolean finished = false;
-    private int lastIndex = 0;
+    private boolean running = false;
+    private int lastIndex;
     // End of Variable Declaration
 
     public AlphaTracer(BufferedImage image) {
@@ -81,42 +84,45 @@ public class AlphaTracer {
         // Initial point
         this.curPos = new Point(new Point(maxX, yPixel));
         this.initPos = new Point(curPos);
+        
+        // @TODO there is an error where getNextOpenSpace
+        // will wander into colors and end early even though it
+        // should skate along the outside. 
+        // This can clearly be observed in example8.png near the
+        // Fifth polygon if you slow down the timer and watch it while
+        // zoomed in.
+        // Possibly cppArray[] needs to fall back on itself once if the selected
+        // pixel is not transparent.
     }
 
     public void addVerticalLine(Point pos) {
 
-        //
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
-
-        //lineList.add(getVerticalLineTrace(img, pos));
+        // If we're within the bounds of the image.
         if (pos.x >= 0 && pos.y >= 0 && pos.x <= traceImage.getWidth() - 1 && pos.y <= traceImage.getHeight() - 1) {
 
-            //
+            // Get the start and end points for our line
             final Point[] points = getVerticalLineTrace(traceImage, pos);
 
-            //
+            // If the points exist
             if (points[0] != null && points[1] != null) {
 
-                //
+                // Determine the distance between them.
                 final int distY = points[1].y - points[0].y;
 
-                //
+                // Clear those pixels.
                 for (int i = 0; i <= distY; i++) {
 
-                    //
+                    // Setting the rgb to clear which will get ignored by the tracer
                     traceImage.setRGB(pos.x, points[0].y + i, clear);
                 }
 
-                //
+                // Make sure we can recreate this line later.
                 pointList.put(pos, 1);
             }
         }
     }
 
     public void addHorizontalLine(Point pos) {
-
-        //
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
 
         //lineList.add(getVerticalLineTrace(img, pos));
         if (pos.x >= 0 && pos.y >= 0 && pos.x < traceImage.getWidth() - 1 && pos.y < traceImage.getHeight() - 1) {
@@ -161,11 +167,13 @@ public class AlphaTracer {
         maxX = -1;
         yPixel = -1;
         lastIndex = 0;
+        curPoints = 0;
 
         //
         finished = false;
         started = false;
-        
+        running = false;
+
         // Previous and Curpoint reset
         curPos = new Point();
         initPos = new Point();
@@ -214,6 +222,7 @@ public class AlphaTracer {
 
         //
         ColorPointPair cpp = null;
+        running = true;
 
         // Adding points to create the polygon and drawing those points on progImage.
         if (maxX > -1) {
@@ -243,8 +252,11 @@ public class AlphaTracer {
                     // Next Chosen point
                     if (progImage != null) {
 
+                        //
+                        Color inv = new Color(progImage.getRGB(point.x, point.y));
+
                         // Draw a blue dot at the next point on the in-progress image.
-                        progImage.setRGB(point.x, point.y, (new Color(0, 0, 255, 255)).getRGB());
+                        progImage.setRGB(point.x, point.y, (new Color(255 - inv.getRed(), 255 - inv.getGreen(), 255 - inv.getBlue(), 255)).getRGB());
                     }
 
                     // Add the polygon point.
@@ -311,6 +323,12 @@ public class AlphaTracer {
 
             // Find the next start point.
             updateStartPoint();
+            
+            // If after updating the curpos, it equals the initPos
+            // clear the error message that we get from updateStartPoint
+            if (initPos.equals(curPos)) {
+                message = null;
+            }
         }
     }
 
@@ -342,12 +360,24 @@ public class AlphaTracer {
 
                     //
                     if (lastStartPoint != null && lastStartPoint.equals(curPos)) {
-                        message = "Failed to acquire Polygon. Try again.";
-                        finished = true;
+                        
+                        //
+                        if (poly.npoints <= 2) {
+                            message = "Failed to acquire Polygon. Try again.";
+                            finished = true;
+                            running = false;
+                        } else {
+                            message = null;
+                            finished = true;
+                            running = false;
+                        }
+                        
+                        //
                         return;
                     }
 
-                    //
+                    // Seems redundant but we need to reset these each time
+                    // we acquire a new maxX and yPixel
                     initPos = new Point(maxX, yPixel);
                     lastStartPoint = new Point(maxX, yPixel);
 
@@ -356,7 +386,7 @@ public class AlphaTracer {
                     lastIndex = 0;
 
                     // @DEBUG
-                    System.out.println("New MaxX: " + maxX + " Y: " + yPixel);
+                    //System.out.println("New MaxX: " + maxX + " Y: " + yPixel);
                     // Return
                     return;
                 }
@@ -364,6 +394,7 @@ public class AlphaTracer {
 
             // When we're at the end of the image and have nothing.
             if (yPixel >= iHeight - 1 && maxX <= 0) {
+                running = true;
                 finished = true;
                 return;
             }
@@ -553,9 +584,6 @@ public class AlphaTracer {
      */
     private BufferedImage destroyAllIslands(BufferedImage img) {
 
-        // Clear color
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
-
         //
         for (int i = 0; i < img.getWidth(); i++) {
 
@@ -632,8 +660,7 @@ public class AlphaTracer {
      */
     private BufferedImage clearRegionFromImage(BufferedImage img, Polygon region) {
 
-        // Clear color
-        final int clear = (new Color(0, 0, 0, 0)).getRGB();
+        //
         int max = 3;
 
         // GET RID OF IT.
@@ -701,7 +728,7 @@ public class AlphaTracer {
         // Finding the top point.
         for (y1 = my; y1 >= 0; y1--) {
 
-            // So essential go up from the mouse.y until we hit transparency
+            // So essentially go up from the mouse.y until we hit transparency
             if (isTransparent(img.getRGB(mx, y1))) {
                 point[0] = new Point(mx, y1);
                 break;
@@ -752,10 +779,10 @@ public class AlphaTracer {
                 break;
             }
         }
-        
+
         //
         if (point[0] != null) {
-            
+
             //
             for (int x2 = x1 + 1 > img.getWidth() - 1 ? img.getWidth() - 1 : x1 + 1; x2 <= img.getWidth() - 1; x2++) {
                 if (isTransparent(img.getRGB(x2, my))) {
@@ -771,12 +798,12 @@ public class AlphaTracer {
 
     // This pixel must be within the image bounds ; returns the rgb at point as well.
     private int testPixel(BufferedImage img, int x, int y) {
-        return x <= img.getWidth()-1 && y <= img.getHeight()-1 && x >= 0 && y >= 0 ? img.getRGB(x, y) : 0;
+        return x <= img.getWidth() - 1 && y <= img.getHeight() - 1 && x >= 0 && y >= 0 ? img.getRGB(x, y) : 0;
     }
 
     // Checking if the test point is within bounds; convience method.
     private boolean isPixel(BufferedImage img, Point point) {
-        return point.x <= img.getWidth()-1 && point.y <= img.getHeight()-1 && point.x >= 0 && point.y >= 0;
+        return point.x <= img.getWidth() - 1 && point.y <= img.getHeight() - 1 && point.x >= 0 && point.y >= 0;
     }
 
     private boolean isTransparent(int testPixel) {
@@ -791,8 +818,16 @@ public class AlphaTracer {
         return finished;
     }
 
+    public boolean isRunning() {
+        return running;
+    }
+
     public boolean hasStarted() {
         return started;
+    }
+
+    public Point getCurrentPosition() {
+        return curPos;
     }
 
     public BufferedImage getOriginalImage() {
@@ -832,6 +867,9 @@ public class AlphaTracer {
         private final Point point;
         // Data Types
         private final int rgb;
+        private final int red;
+        private final int green;
+        private final int blue;
         private final int alpha;
         // End of Variable Delcaration
 
@@ -840,8 +878,11 @@ public class AlphaTracer {
             this.rgb = rgb;
             this.point = point;
 
-            //
+            // Parse out the ARGB values in case I want to turn this into a color chooser.
             alpha = ((rgb >> 24) & 0xFF);
+            red = ((rgb >> 16) & 0xFF);
+            green = ((rgb >> 8) & 0xFF);
+            blue = ((rgb) & 0xFF);
         }
 
         public Point point() {
@@ -854,6 +895,18 @@ public class AlphaTracer {
 
         public int alpha() {
             return alpha;
+        }
+
+        public int red() {
+            return red;
+        }
+
+        public int blue() {
+            return blue;
+        }
+
+        public int green() {
+            return green;
         }
     }
 }
