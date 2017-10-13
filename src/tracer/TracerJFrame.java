@@ -29,6 +29,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -68,6 +69,10 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     // Data Types
     private boolean hoverHorizontal = false;
     private boolean hoverVertical = false;
+    private int ZOOM = 1;
+    private final int ZOOM_MAX = 5;
+    private int lastXSector;
+    private int lastYSector;
     // End of Variable Declaration
 
     public static void main(String[] args) {
@@ -107,32 +112,33 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 // Cast to 2D for easier polygon rendering.
                 final Graphics2D manet = (Graphics2D) monet;
 
+                //
+                final Point zoomPos = new Point(mousePos.x / ZOOM, mousePos.y / ZOOM);
+
                 // Draw textile background for whatever reason. Don't know if i completely
                 // enjoy the look it gives.
                 drawTextileBackground(manet);
 
                 //
+                manet.scale(ZOOM, ZOOM);
+
+                //
                 if (tracer != null) {
 
                     //
-                    if (trackJToggle.isSelected()) {
-
-                        // If the progress image is being used
-                        if (tracer.hasStarted() && !tracer.isFinished()) {
-                            manet.scale(2f, 2f);
-                        } else {
-                            manet.scale(1f, 1f);
-                        }
-                    }
+                    final BufferedImage ti = tracer.getTraceImage();
+                    final BufferedImage pi = tracer.getProgressImage();
 
                     // Draw the image under
-                    manet.drawImage(tracer.isFinished() || !tracer.hasStarted() ? tracer.getTraceImage() : tracer.getProgressImage(), 0, 0, this);
+                    manet.drawImage(tracer.isFinished() || !tracer.isRunning() ? ti : pi, 0, 0, this);
                     manet.setColor(Color.BLACK);
 
                     // Draw those polygons over.
                     for (Polygon poly : tracer.getPolygonList()) {
 
-                        if (poly.contains(mousePos)) {
+                        if (ZOOM > 1 && poly.contains(zoomPos)) {
+                            manet.fill(poly);
+                        } else if (ZOOM == 1 && poly.contains(mousePos)) {
                             manet.fill(poly);
                         } else {
                             manet.draw(poly);
@@ -142,8 +148,9 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                     //
                     if (hoverHorizontal || hoverVertical) {
 
+                        // Adjust that point for Zoom
                         // Hover line
-                        final Point[] points = hoverHorizontal ? tracer.getHorizontalLineTrace(tracer.getTraceImage(), mousePos) : tracer.getVerticalLineTrace(tracer.getTraceImage(), mousePos);
+                        final Point[] points = hoverHorizontal ? tracer.getHorizontalLineTrace(ti, zoomPos) : tracer.getVerticalLineTrace(ti, zoomPos);
                         manet.setColor(Color.BLACK);
 
                         // Drawing the line to indicate the cut
@@ -174,12 +181,16 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                     manet.setColor(Color.RED);
                     manet.fillOval(p.x, p.y, 2, 2);
                 }
+
+                //
+                manet.scale(1f, 1f);
             }
         };
-        panel.addMouseMotionListener(new MouseAdapter() {
+        panel.addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseMoved(MouseEvent evt) {
                 mousePos = evt.getPoint();
+                posJLabel.setText("X: " + mousePos.x + " Y: " + mousePos.y);
                 repaint();
             }
         });
@@ -187,9 +198,13 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
             @Override
             public void mouseClicked(MouseEvent evt) {
                 if (evt.getButton() == MouseEvent.BUTTON1) {
-                    //tracer.addVerticalLine(evt.getPoint());
+
+                    //
                     if (hoverHorizontal) {
-                        tracer.addHorizontalLine(evt.getPoint());
+
+                        // Adjust point for zoom
+                        Point zoomPos = new Point(evt.getPoint().x / ZOOM, evt.getPoint().y / ZOOM);
+                        tracer.addHorizontalLine(zoomPos);
                         hoverVertical = false;
                     } else if (hoverVertical) {
                         tracer.addVerticalLine(evt.getPoint());
@@ -198,6 +213,9 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 } else if (evt.getButton() == MouseEvent.BUTTON3) {
                     hoverVertical = false;
                     hoverHorizontal = false;
+
+                    // When hovering and you right click we can return the pixels
+                    // that were cleared with left click -- soon.
                 }
 
                 //
@@ -223,6 +241,8 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         final ImageIcon iconImportOver = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-import-roll24.png")));
         final ImageIcon iconHorizontal = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-line-horizontal24.png")));
         final ImageIcon iconVertical = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-line-vertical24.png")));
+        final ImageIcon iconZoomIn = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-zoom-in24.png")));
+        final ImageIcon iconZoomOut = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-zoom-out24.png")));
         iconTrackOn = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-track16.png")));
         iconTrackOff = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-track-off16.png")));
         final Image imageFrame16 = kit.createImage(closs.getResource("/icons/icon-frame16.png"));
@@ -249,10 +269,16 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         importJButton.setIcon(iconImport);
         importJButton.setRolloverIcon(iconImportOver);
         trackJToggle.setIcon(iconTrackOn);
+        zoomInJButton.setIcon(iconZoomIn);
+        zoomOutJButton.setIcon(iconZoomOut);
 
         //
         transJSlider.setValue(tracer.getTransparencyThreshold());
         timerJLabel.setText("Trace Speed: " + timer.getDelay() + "m/s");
+
+        //
+        posJLabel.setText("X: " + mousePos.x + " Y: " + mousePos.y);
+        zoomJLabel.setText("Zoom: " + (ZOOM * 100) + "%");
 
         // Update JLabel
         int size = tracer.getPolygonList().size();
@@ -349,6 +375,8 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         mainJScrollPane.setViewportView(panel);
 
         //
+        updatePanelZoom(ZOOM);
+
         //
         repaint();
     }
@@ -357,34 +385,40 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     public void actionPerformed(ActionEvent evt) {
 
         // Step
-        tracer.step();
+        tracer.run();
 
         // In the case that you want to watch, the tracer work, more closely.
         if (trackJToggle.isSelected()) {
 
             // This makes the viewport scroll to the current position.
-            if (tracer.hasStarted() && !tracer.isFinished()) {
+            if (tracer.isRunning()) {
 
-                //
+                // Making the view snap to the tracers current position.
                 final Point cur = new Point(tracer.getCurrentPosition());
+                cur.x *= ZOOM;
+                cur.y *= ZOOM;
 
                 // First, if the images zoomed in bounds exceed the pane
-                if (selImage.getWidth() * 2 > mainJScrollPane.getWidth()
-                        || selImage.getHeight() * 2 > mainJScrollPane.getHeight()) {
+                if (panel.getWidth() > mainJScrollPane.getWidth() || panel.getHeight() > mainJScrollPane.getHeight()) {
 
-                    // This fixes jittering when the setViewPosition goes oob.
-                    if (cur.x * 2 >= mainJScrollPane.getWidth()) {
-                        cur.x = (selImage.getWidth() * 2) - mainJScrollPane.getWidth();
+                    // Determine which Sector we're in for X
+                    final int curXSector = cur.x / mainJScrollPane.getWidth();
+                    final int curYSector = cur.y / mainJScrollPane.getHeight();
+
+                    // Only update if the sector changes.
+                    if (lastXSector != curXSector || lastYSector != curYSector) {
+
+                        // Change the sector
+                        lastXSector = curXSector;
+                        lastYSector = curYSector;
+
+                        // Snap to that position
+                        cur.x = (mainJScrollPane.getWidth() * lastXSector) + 1;
+                        cur.y = (mainJScrollPane.getHeight() * lastYSector) + 1;
+
+                        // Now scroll to that.
+                        mainJScrollPane.getViewport().setViewPosition(cur);
                     }
-
-                    // If the y * 2 (because the image is twice the size) is greater than
-                    // the size of the pane then never exceed the imageHeight * 2.
-                    if (cur.y * 2 >= mainJScrollPane.getHeight()) {
-                        cur.y = (selImage.getHeight() * 2) - mainJScrollPane.getHeight();
-                    }
-
-                    // Now scroll to that.
-                    mainJScrollPane.getViewport().setViewPosition(cur);
                 }
             }
         }
@@ -401,15 +435,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
             // Return the size of the panel to the images size, because it was probably
             // zoomed in if you were tracking it.
-            final Dimension dim = new Dimension(selImage.getWidth(), selImage.getHeight());
-            panel.setSize(dim);
-            panel.setPreferredSize(dim);
-            panel.setMinimumSize(dim);
-            panel.setMaximumSize(dim);
-
-            // Revalidate that with the scrollpane.
-            mainJScrollPane.setViewportView(panel);
-            mainJScrollPane.revalidate();
+            updatePanelZoom(1);
 
             // Reset view position
             mainJScrollPane.getViewport().setViewPosition(new Point(0, 0));
@@ -499,6 +525,22 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         }
     }
 
+    private void updatePanelZoom(int ZOOM) {
+
+        //
+        this.ZOOM = ZOOM;
+
+        //
+        panel.setSize(selImage.getWidth() * ZOOM, selImage.getHeight() * ZOOM);
+        panel.setPreferredSize(panel.getSize());
+        panel.setMinimumSize(panel.getSize());
+        panel.setMaximumSize(panel.getSize());
+
+        //
+        mainJScrollPane.setViewportView(panel);
+        mainJScrollPane.revalidate();
+    }
+
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -535,12 +577,21 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         timerJLabel = new javax.swing.JLabel();
         filler10 = new javax.swing.Box.Filler(new java.awt.Dimension(0, 0), new java.awt.Dimension(0, 0), new java.awt.Dimension(32767, 0));
         timerJSlider = new javax.swing.JSlider();
+        infoJPanel = new javax.swing.JPanel();
+        posJLabel = new javax.swing.JLabel();
+        filler13 = new javax.swing.Box.Filler(new java.awt.Dimension(0, 0), new java.awt.Dimension(0, 0), new java.awt.Dimension(32767, 0));
+        zoomJLabel = new javax.swing.JLabel();
+        filler5 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
+        zoomInJButton = new javax.swing.JButton();
+        filler12 = new javax.swing.Box.Filler(new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 0), new java.awt.Dimension(8, 32767));
+        zoomOutJButton = new javax.swing.JButton();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setMinimumSize(new java.awt.Dimension(306, 388));
+        setMinimumSize(new java.awt.Dimension(440, 488));
+        setPreferredSize(new java.awt.Dimension(440, 448));
 
         mainJScrollPane.setToolTipText("");
-        mainJScrollPane.setMaximumSize(new java.awt.Dimension(238, 202));
+        mainJScrollPane.setMaximumSize(new java.awt.Dimension(238, 32767));
         mainJScrollPane.setMinimumSize(new java.awt.Dimension(238, 202));
         mainJScrollPane.setPreferredSize(new java.awt.Dimension(238, 202));
 
@@ -702,6 +753,49 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         });
         viewJPanel.add(timerJSlider);
 
+        infoJPanel.setLayout(new javax.swing.BoxLayout(infoJPanel, javax.swing.BoxLayout.LINE_AXIS));
+
+        posJLabel.setText("Mouse:");
+        posJLabel.setEnabled(false);
+        posJLabel.setHorizontalTextPosition(javax.swing.SwingConstants.RIGHT);
+        posJLabel.setMaximumSize(new java.awt.Dimension(72, 24));
+        posJLabel.setMinimumSize(new java.awt.Dimension(72, 24));
+        posJLabel.setPreferredSize(new java.awt.Dimension(72, 24));
+        infoJPanel.add(posJLabel);
+        infoJPanel.add(filler13);
+
+        zoomJLabel.setText("Zoom:");
+        zoomJLabel.setEnabled(false);
+        zoomJLabel.setHorizontalTextPosition(javax.swing.SwingConstants.RIGHT);
+        zoomJLabel.setMaximumSize(new java.awt.Dimension(72, 24));
+        zoomJLabel.setMinimumSize(new java.awt.Dimension(72, 24));
+        zoomJLabel.setPreferredSize(new java.awt.Dimension(72, 24));
+        infoJPanel.add(zoomJLabel);
+        infoJPanel.add(filler5);
+
+        zoomInJButton.setToolTipText("Zoom In");
+        zoomInJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        zoomInJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        zoomInJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        zoomInJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                zoomInJButtonActionPerformed(evt);
+            }
+        });
+        infoJPanel.add(zoomInJButton);
+        infoJPanel.add(filler12);
+
+        zoomOutJButton.setToolTipText("Zoom Out");
+        zoomOutJButton.setMaximumSize(new java.awt.Dimension(24, 24));
+        zoomOutJButton.setMinimumSize(new java.awt.Dimension(24, 24));
+        zoomOutJButton.setPreferredSize(new java.awt.Dimension(24, 24));
+        zoomOutJButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                zoomOutJButtonActionPerformed(evt);
+            }
+        });
+        infoJPanel.add(zoomOutJButton);
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
@@ -715,19 +809,22 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                         .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                         .addComponent(imageJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addComponent(viewJPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                    .addComponent(viewJPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(infoJPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                 .addContainerGap())
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                    .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(imageJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, 317, Short.MAX_VALUE))
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(imageJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, 287, Short.MAX_VALUE)
+                    .addComponent(mainJScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(infoJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(percisionJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(viewJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(buttonJPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
@@ -740,29 +837,45 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     private void playJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_playJButtonActionPerformed
         // DO IT!!!
         if (timer.isRunning()) {
+
+            // Pause the timer
             timer.stop();
+
+            // Set the play icon
             playJButton.setIcon(iconPlay);
+
+            // We can refresh at this point.
+            refreshJButton.setEnabled(true);
         } else {
+
+            // Start the timer and change the play icon to a pause icon
             timer.start();
             playJButton.setIcon(iconPause);
+
+            // Diable most control buttons when we start
             refreshJButton.setEnabled(false);
             horizontalJButton.setEnabled(false);
             verticalJButton.setEnabled(false);
 
             //
-            panel.setSize(selImage.getWidth() * 2, selImage.getHeight() * 2);
-            panel.setPreferredSize(panel.getSize());
-            panel.setMinimumSize(panel.getSize());
-            panel.setMaximumSize(panel.getSize());
+            hoverVertical = false;
+            hoverHorizontal = false;
 
-            //
-            mainJScrollPane.setViewportView(panel);
-            mainJScrollPane.revalidate();
+            // If you have the track toggle selected
+            if (trackJToggle.isSelected()) {
+
+                //
+                updatePanelZoom(ZOOM >= 2 ? ZOOM : 2);
+            }
         }
 
-        //
+        // If we finished then restart from the top.
         if (tracer.isFinished()) {
+
+            // Restart the trace and run.
             tracer.reset();
+
+            // Run.
             timer.start();
         }
 
@@ -775,7 +888,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
             errorJButton.setToolTipText("Polygons: " + tracer.getPolygonList().size());
         }
 
-        //
+        // Quick refresh.
         repaint();
     }//GEN-LAST:event_playJButtonActionPerformed
 
@@ -798,7 +911,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
                 // If it's been run at least once with the current image.
                 // Do the automatic Polygon acquisition.
-                if (tracer.hasStarted() && !tracer.isRunning()) {
+                if (tracer.isFinished()) {
 
                     // No longer need the timer running
                     timer.stop();
@@ -952,36 +1065,22 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         // If the tracer is running
         trackJToggle.setIcon(trackJToggle.isSelected() ? iconTrackOn : iconTrackOff);
 
-        if (tracer.hasStarted() && !tracer.isFinished()) {
+        //
+        if (!tracer.isFinished()) {
 
             // and this is deselected while it's running
             if (!trackJToggle.isSelected()) {
 
                 // Return the size of the panel to the images size, because it was probably
                 // zoomed in if you were tracking it.
-                final Dimension dim = new Dimension(selImage.getWidth(), selImage.getHeight());
-                panel.setSize(dim);
-                panel.setPreferredSize(dim);
-                panel.setMinimumSize(dim);
-                panel.setMaximumSize(dim);
-
-                // Revalidate that with the scrollpane.
-                mainJScrollPane.setViewportView(panel);
-                mainJScrollPane.revalidate();
+                updatePanelZoom(1);
 
                 // Reset view position
                 mainJScrollPane.getViewport().setViewPosition(new Point(0, 0));
             } else {
 
                 //
-                panel.setSize(selImage.getWidth() * 2, selImage.getHeight() * 2);
-                panel.setPreferredSize(panel.getSize());
-                panel.setMinimumSize(panel.getSize());
-                panel.setMaximumSize(panel.getSize());
-
-                //
-                mainJScrollPane.setViewportView(panel);
-                mainJScrollPane.revalidate();
+                updatePanelZoom(2);
             }
         }
     }//GEN-LAST:event_trackJToggleActionPerformed
@@ -995,14 +1094,39 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         timerJLabel.setText("Trace Speed: " + val + "m/s");
     }//GEN-LAST:event_timerJSliderStateChanged
 
+    private void zoomInJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoomInJButtonActionPerformed
+        // TODO add your handling code here:
+        updatePanelZoom(ZOOM + 1 <= ZOOM_MAX ? ZOOM + 1 : ZOOM);
+
+        //
+        zoomJLabel.setText("Zoom: " + (ZOOM * 100) + "%");
+
+        //
+        repaint();
+    }//GEN-LAST:event_zoomInJButtonActionPerformed
+
+    private void zoomOutJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoomOutJButtonActionPerformed
+        // TODO add your handling code here:
+        updatePanelZoom(ZOOM - 1 >= 1 ? ZOOM - 1 : ZOOM);
+
+        //
+        zoomJLabel.setText("Zoom: " + (ZOOM * 100) + "%");
+
+        //
+        repaint();
+    }//GEN-LAST:event_zoomOutJButtonActionPerformed
+
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JPanel buttonJPanel;
     private javax.swing.JButton errorJButton;
     private javax.swing.Box.Filler filler1;
     private javax.swing.Box.Filler filler10;
+    private javax.swing.Box.Filler filler12;
+    private javax.swing.Box.Filler filler13;
     private javax.swing.Box.Filler filler2;
     private javax.swing.Box.Filler filler3;
     private javax.swing.Box.Filler filler4;
+    private javax.swing.Box.Filler filler5;
     private javax.swing.Box.Filler filler6;
     private javax.swing.Box.Filler filler7;
     private javax.swing.Box.Filler filler8;
@@ -1010,11 +1134,13 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     private javax.swing.JPanel imageJPanel;
     private javax.swing.JScrollPane imageJScrollPane;
     private javax.swing.JButton importJButton;
+    private javax.swing.JPanel infoJPanel;
     private javax.swing.JSeparator jSeparator1;
     private javax.swing.JSeparator jSeparator2;
     private javax.swing.JScrollPane mainJScrollPane;
     private javax.swing.JPanel percisionJPanel;
     private javax.swing.JButton playJButton;
+    private javax.swing.JLabel posJLabel;
     private javax.swing.JButton refreshJButton;
     private javax.swing.JLabel timerJLabel;
     private javax.swing.JSlider timerJSlider;
@@ -1023,6 +1149,9 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     private javax.swing.JSlider transJSlider;
     private javax.swing.JButton verticalJButton;
     private javax.swing.JPanel viewJPanel;
+    private javax.swing.JButton zoomInJButton;
+    private javax.swing.JLabel zoomJLabel;
+    private javax.swing.JButton zoomOutJButton;
     // End of variables declaration//GEN-END:variables
 
     private class ImageButton extends JButton implements ActionListener {
