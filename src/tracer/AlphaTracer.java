@@ -50,16 +50,17 @@ public class AlphaTracer {
     private final int MIN_POLYGON_POINTS = 3;
     private final int COLOR_CLEAR = (new Color(0, 0, 0, 0)).getRGB();
     private int lastIndex;
-    private int transPixel = 8;
+    private int runCount;
+    private int precision = 8;
     private String message;
     // End of Variable Declaration
 
     public AlphaTracer(BufferedImage image) {
 
         // Clear certain pixels that cause issues.
-        origImage = destroyAllIslands(image);
-        traceImage = bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB);
-        progImage = bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB);
+        origImage = image;
+        traceImage = destroyAllIslands(bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB));
+        progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
         // Array of surrounding points, about curPos.
         cppArray = new ColorPointPair[8];
@@ -116,8 +117,8 @@ public class AlphaTracer {
 
     public void addHorizontalLine(Point pos) {
 
-        //lineList.add(getVerticalLineTrace(img, pos));
-        if (pos.x >= 0 && pos.y >= 0 && pos.x < traceImage.getWidth() - 1 && pos.y < traceImage.getHeight() - 1) {
+        //
+        if (pos.x >= 0 && pos.y >= 0 && pos.x <= traceImage.getWidth() - 1 && pos.y <= traceImage.getHeight() - 1) {
 
             //
             final Point[] points = getHorizontalLineTrace(traceImage, pos);
@@ -148,7 +149,7 @@ public class AlphaTracer {
     public void reset(BufferedImage image) {
 
         //
-        origImage = destroyAllIslands(image);
+        origImage = image;
 
         // Clear the pointmap when you set a new image.
         pointMap.clear();
@@ -162,6 +163,7 @@ public class AlphaTracer {
         // Makes it so that on each new polygon we start
         // going to the right (0 degrees) first
         lastIndex = 0;
+        runCount = 0;
 
         // Our stop variables.
         finished = false;
@@ -175,13 +177,19 @@ public class AlphaTracer {
         polyList.clear();
 
         // Reset the images to the original image, blah blah.
-        traceImage = bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB);
-        progImage = bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB);
+        traceImage = destroyAllIslands(bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB));
+        progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
         // Previous and Curpoint reset
         initPos = updateStartPoint();
         curPos = new Point(initPos);
-        
+
+        //
+        applyPointMap();
+    }
+
+    public void applyPointMap() {
+
         // Re add those lines you made on the trace image.
         for (Map.Entry<Point, Integer> map : pointMap.entrySet()) {
             switch (map.getValue()) {
@@ -208,6 +216,14 @@ public class AlphaTracer {
 
             // Running, sprinting, tripping and falling.
             run();
+
+            //
+            runCount++;
+
+            // Keeps the program from running indefinitely on errors that I haven't fixed / found yet.
+            if (runCount > origImage.getWidth() * origImage.getHeight()) {
+                finished = true;
+            }
         }
     }
 
@@ -305,7 +321,7 @@ public class AlphaTracer {
             }
 
             // Renew the trace image with pixels with no connection to other pixels removed.
-            traceImage = destroyAllIslands(clearRegionFromImage(traceImage, polygon));
+            traceImage = destroyAllIslands(clearRegionFromImage(traceImage, polygon, COLOR_CLEAR));
 
             // Clearing the in progress's image data and setting it to the trace image.
             progImage.flush();
@@ -340,12 +356,9 @@ public class AlphaTracer {
 
                     // Stop running but we're not finished; run will reset this to true 
                     running = false;
-                    
+
                     // New polygon, then restart by cpp preferring to move to the right first.
                     lastIndex = 0;
-
-                    // @DEBUG
-                    //System.out.println("New MaxX: " + x + " Y: " + y);
 
                     // Return
                     return new Point(x, y);
@@ -361,21 +374,21 @@ public class AlphaTracer {
     private void updatePixelSpace() {
         // We don't consider the center because we're already there.
         // Pixel right
-        cppArray[0] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y) : 0, new Point(curPos.x + 1, curPos.y));
+        cppArray[0] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y) : 0, new Point(curPos.x + 1, curPos.y));
         // Pixel bottom right
-        cppArray[1] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y + 1) : 0, new Point(curPos.x + 1, curPos.y + 1));
+        cppArray[1] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y + 1) : 0, new Point(curPos.x + 1, curPos.y + 1));
         // Pixel bottom
-        cppArray[2] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y + 1) : 0, new Point(curPos.x, curPos.y + 1));
+        cppArray[2] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y + 1) : 0, new Point(curPos.x, curPos.y + 1));
         // Pixel bottom left
-        cppArray[3] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y + 1) : 0, new Point(curPos.x - 1, curPos.y + 1));
+        cppArray[3] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y + 1) : 0, new Point(curPos.x - 1, curPos.y + 1));
         // Pixel left
-        cppArray[4] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y) : 0, new Point(curPos.x - 1, curPos.y));
+        cppArray[4] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y) : 0, new Point(curPos.x - 1, curPos.y));
         // Pixel top left
-        cppArray[5] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y - 1) : 0, new Point(curPos.x - 1, curPos.y - 1));
+        cppArray[5] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y - 1) : 0, new Point(curPos.x - 1, curPos.y - 1));
         // Pixel top
-        cppArray[6] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y - 1) : 0, new Point(curPos.x, curPos.y - 1));
+        cppArray[6] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y - 1) : 0, new Point(curPos.x, curPos.y - 1));
         // Pixel top right
-        cppArray[7] = new ColorPointPair(isPixel(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y - 1) : 0, new Point(curPos.x + 1, curPos.y - 1));
+        cppArray[7] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y - 1) : 0, new Point(curPos.x + 1, curPos.y - 1));
     }
 
     // Locates the next empty space, but it depends on which index was last used.
@@ -407,7 +420,7 @@ public class AlphaTracer {
             final ColorPointPair p = cppArray[i % cppArray.length];
 
             // If the color code at index has a valid pixel to test.
-            if (p.alpha() > transPixel) {
+            if (p.alpha() > precision) {
 
                 // Move the current position forward
                 curPos = p.point;
@@ -419,7 +432,7 @@ public class AlphaTracer {
                     This fixes the iterator trailing off to the right into
                     not transparent pixels by turning it back 45 degrees.
                  */
-                if (lastIndex == 0 && cppArray[7].alpha() > transPixel && cppArray[0].alpha() > transPixel) {
+                if (lastIndex == 0 && cppArray[7].alpha() > precision && cppArray[0].alpha() > precision) {
                     lastIndex = 7;
                 } else {
                     // Go back 45 degrees.
@@ -437,7 +450,7 @@ public class AlphaTracer {
         unused = cppArray.length - lastIndex;
 
         //@Debug
-        //System.out.println("CurPos: " + curPos + " | InitPos: " + initPos + " Last Index: " + lastIndex);
+        //// System.out.println("CurPos: " + curPos + " | InitPos: " + initPos + " Last Index: " + lastIndex);
         // This makes the tracer go back and detect shapes like spirals.
         if (lastIndex >= 7) {
             lastIndex = 0;
@@ -458,7 +471,7 @@ public class AlphaTracer {
             /* 
                 As long as this test pixel isn't out of range.
              */
-            if (output.alpha() > transPixel) {
+            if (output.alpha() > precision) {
 
                 // Again moving forward.
                 curPos = output.point;
@@ -479,6 +492,30 @@ public class AlphaTracer {
         return null;
     }
 
+    public void invertOriginalImage(Color replace) {
+        
+        // Output image
+        final BufferedImage output = new BufferedImage(origImage.getWidth(), origImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
+
+        // Replaces all clear / transparent argb space with red pixels.
+        for (int x = 0; x <= origImage.getWidth() - 1; x++) {
+            
+            //
+            for (int y = 0; y <= origImage.getHeight() - 1; y++) {
+
+                //
+                final int pixel = origImage.getRGB(x, y);
+
+                // If the pixel is transparent change it to replace color.
+                if (isTransparent(pixel)) {
+                    output.setRGB(x, y, replace.getRGB());
+                }
+            }
+        }
+      
+        //
+        reset(output);
+    }
     public Polygon getSelectedPolygon(Point pos) {
 
         // Grab the first polygon detected to contains the Point::pos
@@ -589,7 +626,7 @@ public class AlphaTracer {
                         }
 
                         // if 75% are invisible then remove the pixel
-                        if (point >= 6) {
+                        if (point >= 5) {
                             img.setRGB(i, j, COLOR_CLEAR);
                         }
                     } catch (ArrayIndexOutOfBoundsException aioobe) {
@@ -611,16 +648,16 @@ public class AlphaTracer {
      * @return The source image with the pixels inside the bounds of the
      * polygon, removed.
      */
-    private BufferedImage clearRegionFromImage(BufferedImage img, Polygon region) {
+    private BufferedImage clearRegionFromImage(BufferedImage img, Polygon region, int color) {
 
         //
         int max = 2;
 
         // GET RID OF IT.
-        for (int i = 0; i <= img.getWidth()-1; i++) {
+        for (int i = 0; i <= img.getWidth() - 1; i++) {
 
             // Going over every pixel.
-            for (int j = 0; j <= img.getHeight()-1; j++) {
+            for (int j = 0; j <= img.getHeight() - 1; j++) {
 
                 // If the image has a point that the polygon has (inefficient i know; will optimize later)
                 if (region.contains(i, j)) {
@@ -635,32 +672,39 @@ public class AlphaTracer {
                         try {
 
                             // Current Pixel
-                            img.setRGB(i, j, COLOR_CLEAR);
+                            img.setRGB(i, j, color);
                             // Pixel to the Right
-                            img.setRGB(i + size, j, COLOR_CLEAR);
+                            img.setRGB(i + size, j, color);
                             // Pixel Bottom Right
-                            img.setRGB(i + size, j + size, COLOR_CLEAR);
+                            img.setRGB(i + size, j + size, color);
                             // Pixel to the Bottom
-                            img.setRGB(i, j + size, COLOR_CLEAR);
+                            img.setRGB(i, j + size, color);
                             // Pixel to the Bottom Left
-                            img.setRGB(i - size, j + size, COLOR_CLEAR);
+                            img.setRGB(i - size, j + size, color);
                             // Pixel to the left.
-                            img.setRGB(i - size, j, COLOR_CLEAR);
+                            img.setRGB(i - size, j, color);
                             // Pixel Top Left
-                            img.setRGB(i - size, j - size, COLOR_CLEAR);
+                            img.setRGB(i - size, j - size, color);
                             // Pixel Above
-                            img.setRGB(i, j - size, COLOR_CLEAR);
+                            img.setRGB(i, j - size, color);
                             // Pixel Top Right
-                            img.setRGB(i + size, j - size, COLOR_CLEAR);
+                            img.setRGB(i + size, j - size, color);
                         } catch (ArrayIndexOutOfBoundsException aioobe) {
-                            
+
                             // If it errors out then just stop.
                             break;
                             // @DEBUG
-                            //System.out.println("Eraser Size: " + max);
+                            //// System.out.println("Eraser Size: " + max);
                         }
                     }
                 }
+            }
+        }
+
+        if (region.npoints >= MIN_POLYGON_POINTS) {
+            // A Fix for left over pixels if the above clear fails.
+            for (int i = 0; i < region.npoints; i++) {
+                img.setRGB(region.xpoints[i], region.ypoints[i], COLOR_CLEAR);
             }
         }
 
@@ -781,12 +825,12 @@ public class AlphaTracer {
     }
 
     // Checking if the test point is within bounds; convience method.
-    private boolean isPixel(BufferedImage img, Point point) {
+    private boolean isINB(BufferedImage img, Point point) {
         return point.x <= img.getWidth() - 1 && point.y <= img.getHeight() - 1 && point.x >= 0 && point.y >= 0;
     }
 
     private boolean isTransparent(int testPixel) {
-        return isTransparent(testPixel, transPixel);
+        return isTransparent(testPixel, precision);
     }
 
     private boolean isTransparent(int testPixel, int thresh) {
@@ -822,16 +866,28 @@ public class AlphaTracer {
         return polyList;
     }
 
+    public HashMap<Point, Integer> getPointMap() {
+        return pointMap;
+    }
+
     public String getMessage() {
         return message;
     }
 
-    public int getTransparencyThreshold() {
-        return transPixel;
+    public int getPrecision() {
+        return precision;
     }
 
-    public void setTransparencyThreshold(int transPixel) {
-        this.transPixel = transPixel;
+    public void setPrecision(int precision) {
+        this.precision = precision;
+    }
+
+    public void setPointMap(HashMap<Point, Integer> map) {
+        if (map == null) {
+            return;
+        }
+        pointMap.clear();
+        pointMap.putAll(map);
     }
 
     // Again another bastard nested class of mine.
