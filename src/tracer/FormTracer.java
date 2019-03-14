@@ -1,17 +1,17 @@
 /*
-    Copyright 2017 Robert Cherry
+ Copyright 2017 Robert Cherry
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+ http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
  */
 package tracer;
 
@@ -30,20 +30,16 @@ import javax.swing.ImageIcon;
 /*
  * @author Robert Cherry (MessiahWolf)
  */
-public class AlphaTracer {
+public class FormTracer {
 
     // Variable Declaration
-    // Project Nested Classes
-    private final ColorPointPair[] cppArray;
+    // Project Classes
+    private final FixedColorUnit[] fixedArr;
+    private final FormContainer form;
     // Java Native Classes
-    private final ArrayList<Polygon> polyList;
     private BufferedImage origImage;
     private BufferedImage traceImage;
     private BufferedImage progImage;
-    private final HashMap<Point, Integer> pointMap;
-    private Point curPos;
-    private Point initPos;
-    private Polygon polygon;
     // Data Types
     private boolean finished;
     private boolean running;
@@ -52,10 +48,12 @@ public class AlphaTracer {
     private int lastIndex;
     private int runCount;
     private int precision = 8;
+    private int curX, curY;
+    private int startX, startY;
     private String message;
     // End of Variable Declaration
 
-    public AlphaTracer(BufferedImage image) {
+    public FormTracer(BufferedImage image) {
 
         // Clear certain pixels that cause issues.
         origImage = image;
@@ -63,25 +61,17 @@ public class AlphaTracer {
         progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
         // Array of surrounding points, about curPos.
-        cppArray = new ColorPointPair[8];
+        fixedArr = new FixedColorUnit[8];
 
-        // Initializing.
-        polyList = new ArrayList();
-        pointMap = new HashMap();
-        polygon = new Polygon();
+        // Create the new 2DForm
+        form = new FormContainer();
 
         // Initial point
-        this.initPos = updateStartPoint();
-        this.curPos = new Point(initPos);
-
-        // @TODO there is an error where getNextOpenSpace
-        // will wander into colors and end early even though it
-        // should skate along the outside. 
-        // This can clearly be observed in example8.png near the
-        // Fifth polygon if you slow down the timer and watch it while
-        // zoomed in.
-        // Possibly cppArray[] needs to fall back on itself once if the selected
-        // pixel is not transparent.
+        setStartPoint();
+        
+        // Align the current position to that of the startpoint
+        curX = startX;
+        curY = startY;
     }
 
     public void addVerticalLine(Point pos) {
@@ -109,8 +99,8 @@ public class AlphaTracer {
                 progImage.flush();
                 progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
-                // Make sure we can recreate this line later.
-                pointMap.put(pos, 1);
+                //
+                form.addCutPoint(pos, true);
             }
         }
     }
@@ -141,7 +131,7 @@ public class AlphaTracer {
                 progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
                 // Put in the map.
-                pointMap.put(pos, 0);
+                form.addCutPoint(pos, false);
             }
         }
     }
@@ -152,7 +142,7 @@ public class AlphaTracer {
         origImage = image;
 
         // Clear the pointmap when you set a new image.
-        pointMap.clear();
+        form.resetMap();
 
         //
         reset();
@@ -173,17 +163,18 @@ public class AlphaTracer {
         message = null;
 
         // Clear that polygon and the list of them.
-        polygon.reset();
-        polyList.clear();
+        //form.resetMap();
+        form.resetPolygon();
 
         // Reset the images to the original image, blah blah.
         traceImage = destroyAllIslands(bufferImage(origImage, null, BufferedImage.TYPE_INT_ARGB));
         progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
         // Previous and Curpoint reset
-        initPos = updateStartPoint();
-        curPos = new Point(initPos);
-
+        setStartPoint();
+        curX = startX;
+        curY = startY;
+        
         //
         applyPointMap();
     }
@@ -191,17 +182,13 @@ public class AlphaTracer {
     public void applyPointMap() {
 
         // Re add those lines you made on the trace image.
-        for (Map.Entry<Point, Integer> map : pointMap.entrySet()) {
-            switch (map.getValue()) {
-                case 0:
-                    addHorizontalLine(map.getKey());
-                    break;
-                case 1:
-                    addVerticalLine(map.getKey());
-                    break;
-                case 2:
-                    //addCustomLine(map.getKey());
-                    break;
+        for (Map.Entry<Point, Boolean> map : form.getCutMap().entrySet()) {
+            
+            // false for horizontal, true for veritcal.
+            if (map.getValue()) {
+                addVerticalLine(map.getKey());
+            } else {
+                addHorizontalLine(map.getKey());
             }
         }
     }
@@ -231,48 +218,50 @@ public class AlphaTracer {
 
         // CPP should be null each cycle in the case it fails
         // to acquire a non-null value in the getNextOpenSpace.
-        ColorPointPair cpp = null;
+        FixedColorUnit fcu = null;
 
         // If we're calling run, we're running.
         running = true;
 
         // Adding points to create the polygon and drawing those points on progImage.
-        if (initPos.x > -1 && initPos.y > -1) {
+        if (startX > -1 && startY > -1) {
 
             // Grab the next (first) point.
-            cpp = getNextOpenSpace();
+            fcu = getNextOpenSpace();
 
             // While the AlphaTracer isn't in no-man's-land.
-            while (cpp != null) {
+            while (fcu != null) {
 
                 // We use more than once so a variable.
-                final Point point = cpp.point();
+                final int pntX = fcu.x;
+                final int pntY = fcu.y;
 
                 // In the case it's stuck on a recurring point.
                 // So this will happen when the current point 
                 // has gone all the way around and is near the start
                 // This is where we say stop running now.
-                if (initPos.equals(point)) {
+                if (startX == pntX && startY == pntY) {
                     running = false;
                     finished = true;
                     break;
                 }
 
                 // Otherwise detects pixels that aren't transparent.
-                if (!isTransparent(cpp.rgb())) {
+                if (!isTransparent(fcu.argb)) {
 
                     // As always, if we're calling from an image it must exist.
                     if (progImage != null) {
 
                         //
-                        final Color color = new Color(progImage.getRGB(point.x, point.y));
+                        final Color color = new Color(progImage.getRGB(pntX, pntY));
 
                         // Draw a dot of the inverse color at the next point on the in-progress image.
-                        progImage.setRGB(point.x, point.y, (new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue(), 255)).getRGB());
+                        progImage.setRGB(pntX, pntY, (new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue(), 255)).getRGB());
                     }
 
                     // Add the polygon point.
-                    polygon.addPoint(point.x, point.y);
+                    //polygon.addPoint(pntX, pntY);
+                    form.addPolygonPoint(pntX, pntY);
 
                     // Then break out.
                     break;
@@ -280,25 +269,27 @@ public class AlphaTracer {
 
                 // The previous point has been processed. So onto the next one.
                 // This allows cpp to be null at some point and exit the while loop.
-                cpp = getNextOpenSpace();
+                fcu = getNextOpenSpace();
             }
         }
 
         // Solution for very small shapes that have jagged edges.
-        if (cpp != null && running) {
+        if (fcu != null && running) {
 
             // First get current input for the pixel data at curPos.
             updatePixelSpace();
 
             // For each point around curPos
-            for (ColorPointPair p : cppArray) {
+            for (FixedColorUnit f : fixedArr) {
 
                 // If curPos is really close to initPos and we've at least processed
+                double distance = Math.sqrt(Math.pow((f.x - startX), 2) + Math.pow((f.y - startY), 2));
+
                 // 3 points then close the polygon.
-                if (p.point.distance(initPos) <= 1 && polygon.npoints >= MIN_POLYGON_POINTS) {
+                if (distance <= 1 && form.getActivePolygon().npoints >= MIN_POLYGON_POINTS) {
 
                     // End the polygon.
-                    cpp = null;
+                    fcu = null;
 
                     // Break the loop to save processing time.
                     break;
@@ -307,35 +298,40 @@ public class AlphaTracer {
         }
 
         // Signifies the end of a polygon.
-        if (cpp == null) {
+        if (fcu == null) {
 
             // Add the start point because usually, if not always, it's not added at the beginning.
-            if (!polygon.contains(initPos)) {
-                polygon.addPoint(initPos.x, initPos.y);
+            if (!form.getActivePolygon().contains(startX, startY)) {
+                form.addPolygonPoint(startX, startY);
             }
 
             // Polygon must have a certain number of points to be added.
-            if (polygon.npoints >= MIN_POLYGON_POINTS) {
-                // Add to the list of polygons
-                polyList.add(polygon);
-            }
+//            if (form.getPolygon().npoints >= MIN_POLYGON_POINTS) {
+//                // Add to the list of polygons
+//                form.close();
+//            }
 
             // Renew the trace image with pixels with no connection to other pixels removed.
-            traceImage = destroyAllIslands(clearRegionFromImage(traceImage, polygon, COLOR_CLEAR));
+            traceImage = destroyAllIslands(clearRegionFromImage(traceImage, form.getActivePolygon(), COLOR_CLEAR));
 
             // Clearing the in progress's image data and setting it to the trace image.
             progImage.flush();
             progImage = bufferImage(traceImage, null, BufferedImage.TYPE_INT_ARGB);
 
             // Onto a new polygon.
-            polygon = new Polygon();
+            if (form.getActivePolygon().npoints >= MIN_POLYGON_POINTS) {
+                form.close();
+            }
 
             // Find the next start point.
-            initPos = updateStartPoint();
-            curPos = new Point(initPos);
+            setStartPoint();
+
+            // Update the current point
+            curX = startX;
+            curY = startY;
 
             // If after updating init pos it's equals to -1,-1 then the image is cleared.
-            if (initPos.x == -1 || initPos.y == -1) {
+            if (startX == -1 || startY == -1) {
                 running = false;
                 finished = true;
                 message = null;
@@ -343,7 +339,7 @@ public class AlphaTracer {
         }
     }
 
-    private Point updateStartPoint() {
+    private void setStartPoint() {
 
         // Go down y-coord and sweep left for first non-trans pixel.
         for (int y = 0; y <= traceImage.getHeight() - 1; y++) {
@@ -361,41 +357,46 @@ public class AlphaTracer {
                     lastIndex = 0;
 
                     // Return
-                    return new Point(x, y);
+                    startX = x;
+                    startY = y;
+
+                    //
+                    return;
                 }
             }
         }
 
         // Always send to -1, -1 if we didnt find above. Image is completely transparent.
-        return new Point(-1, -1);
+        startX = -1;
+        startY = -1;
     }
 
     // Accounts for 8 directions laid ordered in an array. This just updates it for the current position in the image.
     private void updatePixelSpace() {
         // We don't consider the center because we're already there.
         // Pixel right
-        cppArray[0] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y) : 0, new Point(curPos.x + 1, curPos.y));
+        fixedArr[0] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY) : 0, curX + 1, curY);
         // Pixel bottom right
-        cppArray[1] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y + 1) : 0, new Point(curPos.x + 1, curPos.y + 1));
+        fixedArr[1] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY + 1) : 0, curX + 1, curY + 1);
         // Pixel bottom
-        cppArray[2] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y + 1) : 0, new Point(curPos.x, curPos.y + 1));
+        fixedArr[2] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX, curY + 1) : 0, curX, curY + 1);
         // Pixel bottom left
-        cppArray[3] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y + 1) : 0, new Point(curPos.x - 1, curPos.y + 1));
+        fixedArr[3] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY + 1) : 0, curX - 1, curY + 1);
         // Pixel left
-        cppArray[4] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y) : 0, new Point(curPos.x - 1, curPos.y));
+        fixedArr[4] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY) : 0, curX - 1, curY);
         // Pixel top left
-        cppArray[5] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x - 1, curPos.y - 1) : 0, new Point(curPos.x - 1, curPos.y - 1));
+        fixedArr[5] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY - 1) : 0, curX - 1, curY - 1);
         // Pixel top
-        cppArray[6] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x, curPos.y - 1) : 0, new Point(curPos.x, curPos.y - 1));
+        fixedArr[6] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX, curY - 1) : 0, curX, curY - 1);
         // Pixel top right
-        cppArray[7] = new ColorPointPair(isINB(traceImage, curPos) ? testPixel(traceImage, curPos.x + 1, curPos.y - 1) : 0, new Point(curPos.x + 1, curPos.y - 1));
+        fixedArr[7] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY - 1) : 0, curX + 1, curY - 1);
     }
 
     // Locates the next empty space, but it depends on which index was last used.
-    public ColorPointPair getNextOpenSpace() {
+    public FixedColorUnit getNextOpenSpace() {
 
         // Null case
-        if (curPos == null || initPos == null) {
+        if ((curX == -1 || curY == -1) || (startX == -1 || startY == -1)) {
             return null;
         }
 
@@ -403,36 +404,37 @@ public class AlphaTracer {
         updatePixelSpace();
 
         // We're done.
-        if (curPos.equals(initPos) && polygon.npoints >= MIN_POLYGON_POINTS) {
+        if ((curX == startX && curY == startY) && form.getActivePolygon().npoints >= MIN_POLYGON_POINTS) {
             return null;
         }
 
         // Updates how many indices we skipped so we don't leave any out.
-        int unused = cppArray.length - lastIndex;
+        int unused = fixedArr.length - lastIndex;
 
         /* 
-            So this loop is going to go through the array which is in
-            clockwise order of: 0-Bottom Right, 1- Bottom, 2-Bottom Left, 3-Left, etc
+         So this loop is going to go through the array which is in
+         clockwise order of: 0-Bottom Right, 1- Bottom, 2-Bottom Left, 3-Left, etc
          */
-        for (int i = lastIndex; i < cppArray.length + unused; i++) {
+        for (int i = lastIndex; i < fixedArr.length + unused; i++) {
 
             // The pixel in the direction decided.
-            final ColorPointPair p = cppArray[i % cppArray.length];
+            final FixedColorUnit p = fixedArr[i % fixedArr.length];
 
             // If the color code at index has a valid pixel to test.
-            if (p.alpha() > precision) {
+            if (p.alpha > precision) {
 
                 // Move the current position forward
-                curPos = p.point;
+                curX = p.x;
+                curY = p.y;
 
                 // @DEBUG
                 //System.err.println("Point: " + p.point + " | Direction chosen:" + (i % arr.length));
                 // @REMINDER COME HERE TO FIX ISSUES WITH DIRECTION CHANGES.
                 /* 
-                    This fixes the iterator trailing off to the right into
-                    not transparent pixels by turning it back 45 degrees.
+                 This fixes the iterator trailing off to the right into
+                 not transparent pixels by turning it back 45 degrees.
                  */
-                if (lastIndex == 0 && cppArray[7].alpha() > precision && cppArray[0].alpha() > precision) {
+                if (lastIndex == 0 && fixedArr[7].alpha > precision && fixedArr[0].alpha > precision) {
                     lastIndex = 7;
                 } else {
                     // Go back 45 degrees.
@@ -447,7 +449,7 @@ public class AlphaTracer {
         }
 
         // The ones we didn't use in the above loop because lastIndex was changed from 0.
-        unused = cppArray.length - lastIndex;
+        unused = fixedArr.length - lastIndex;
 
         //@Debug
         //// System.out.println("CurPos: " + curPos + " | InitPos: " + initPos + " Last Index: " + lastIndex);
@@ -457,31 +459,32 @@ public class AlphaTracer {
         }
 
         /* 
-           If we get to the end of the array and we haven't checked all the test points; move backwards towards 0
-           Essentially we're going counter-clockwise.
+         If we get to the end of the array and we haven't checked all the test points; move backwards towards 0
+         Essentially we're going counter-clockwise.
          */
-        for (int j = lastIndex; j < cppArray.length + unused; j++) {
+        for (int j = lastIndex; j < fixedArr.length + unused; j++) {
 
             /* 
-                Again, the next pixel decided. Mod will keep my int(j) within the bounds of arr(.length)
-                So it will loop back on itself. Cool, right?
+             Again, the next pixel decided. Mod will keep my int(j) within the bounds of arr(.length)
+             So it will loop back on itself. Cool, right?
              */
-            final ColorPointPair output = cppArray[j % cppArray.length];
+            final FixedColorUnit output = fixedArr[j % fixedArr.length];
 
             /* 
-                As long as this test pixel isn't out of range.
+             As long as this test pixel isn't out of range.
              */
-            if (output.alpha() > precision) {
+            if (output.alpha > precision) {
 
                 // Again moving forward.
-                curPos = output.point;
+                curX = output.x;
+                curY = output.y;
 
                 /* 
-                   Our new last index must include the ones we skipped so we start
-                   off into those skipped directions. Then back one just in case
-                   the previous direction is a fit.
+                 Our new last index must include the ones we skipped so we start
+                 off into those skipped directions. Then back one just in case
+                 the previous direction is a fit.
                  */
-                lastIndex = (j % (cppArray.length));
+                lastIndex = j % fixedArr.length;
 
                 // Return the point
                 return output;
@@ -493,13 +496,13 @@ public class AlphaTracer {
     }
 
     public void invertOriginalImage(Color replace) {
-        
+
         // Output image
         final BufferedImage output = new BufferedImage(origImage.getWidth(), origImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
 
         // Replaces all clear / transparent argb space with red pixels.
         for (int x = 0; x <= origImage.getWidth() - 1; x++) {
-            
+
             //
             for (int y = 0; y <= origImage.getHeight() - 1; y++) {
 
@@ -512,14 +515,17 @@ public class AlphaTracer {
                 }
             }
         }
-      
+
         //
         reset(output);
     }
+
     public Polygon getSelectedPolygon(Point pos) {
 
         // Grab the first polygon detected to contains the Point::pos
-        for (Polygon p : polyList) {
+        for (Polygon p : form.getPolygonList()) {
+            
+            //
             if (p.contains(pos)) {
                 return p;
             }
@@ -663,9 +669,9 @@ public class AlphaTracer {
                 if (region.contains(i, j)) {
 
                     /* 
-                        WE NEED THIS. It's going to clear those pesky pixels that aren't really visible
-                        but the isTransparent will still detect them because our detection algorithm
-                        isn't the best.
+                     WE NEED THIS. It's going to clear those pesky pixels that aren't really visible
+                     but the isTransparent will still detect them because our detection algorithm
+                     isn't the best.
                      */
                     // It's an eraser with a size of 1-3.
                     for (int size = 0; size <= max; size++) {
@@ -825,8 +831,8 @@ public class AlphaTracer {
     }
 
     // Checking if the test point is within bounds; convience method.
-    private boolean isINB(BufferedImage img, Point point) {
-        return point.x <= img.getWidth() - 1 && point.y <= img.getHeight() - 1 && point.x >= 0 && point.y >= 0;
+    private boolean isINB(BufferedImage img, int x, int y) {
+        return x <= img.getWidth() - 1 && y <= img.getHeight() - 1 && x >= 0 && y >= 0;
     }
 
     private boolean isTransparent(int testPixel) {
@@ -845,10 +851,6 @@ public class AlphaTracer {
         return running;
     }
 
-    public Point getCurrentPosition() {
-        return curPos;
-    }
-
     public BufferedImage getOriginalImage() {
         return origImage;
     }
@@ -861,13 +863,17 @@ public class AlphaTracer {
         return progImage;
     }
 
-    // Our would-be export method.
-    public ArrayList<Polygon> getPolygonList() {
-        return polyList;
+    public int getCurrentX() {
+        return curX;
     }
 
-    public HashMap<Point, Integer> getPointMap() {
-        return pointMap;
+    public int getCurrentY() {
+        return curY;
+    }
+
+    // Our would-be export method.
+    public ArrayList<Polygon> getPolygonList() {
+        return form.getPolygonList();
     }
 
     public String getMessage() {
@@ -882,62 +888,15 @@ public class AlphaTracer {
         this.precision = precision;
     }
 
-    public void setPointMap(HashMap<Point, Integer> map) {
+    public void setPointMap(HashMap<Point, Boolean> map) {
+
+        // If the Map doesn't exist then kick out.
         if (map == null) {
             return;
         }
-        pointMap.clear();
-        pointMap.putAll(map);
-    }
 
-    // Again another bastard nested class of mine.
-    public class ColorPointPair {
-
-        // Variable Declaration
-        // Java Native Classes
-        private final Point point;
-        // Data Types
-        private final int rgb;
-        private final int red;
-        private final int green;
-        private final int blue;
-        private final int alpha;
-        // End of Variable Delcaration
-
-        // Simply pairs an rgb code and a point together in an object.
-        public ColorPointPair(Integer rgb, Point point) {
-            this.rgb = rgb;
-            this.point = point;
-
-            // Parse out the ARGB values in case I want to turn this into a color chooser.
-            alpha = ((rgb >> 24) & 0xFF);
-            red = ((rgb >> 16) & 0xFF);
-            green = ((rgb >> 8) & 0xFF);
-            blue = ((rgb) & 0xFF);
-        }
-
-        public Point point() {
-            return point;
-        }
-
-        public int rgb() {
-            return rgb;
-        }
-
-        public int alpha() {
-            return alpha;
-        }
-
-        public int red() {
-            return red;
-        }
-
-        public int blue() {
-            return blue;
-        }
-
-        public int green() {
-            return green;
-        }
+        // Reset the Active2DForm and add all the new points.
+        form.resetMap();
+        form.addCutMap(map);
     }
 }
