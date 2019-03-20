@@ -15,6 +15,7 @@
  */
 package tracer;
 
+import com.sun.glass.events.KeyEvent;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -51,7 +52,7 @@ import javax.swing.tree.DefaultTreeModel;
  *
  * @author Robert Cherry (MessiahWolf)
  */
-public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
+public class FormJFrame extends javax.swing.JFrame implements ActionListener {
 
     // Variable Declaration
     // Project Classes
@@ -82,12 +83,12 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
     // End of Variable Declaration
 
     public static void main(String[] args) {
-        final TracerJFrame main = new TracerJFrame();
+        final FormJFrame main = new FormJFrame();
         main.setTitle("Image Tracer (Robert Cherry)");
         main.setVisible(true);
     }
 
-    public TracerJFrame() {
+    public FormJFrame() {
 
         // Attempt to set the look and feel of the application
         try {
@@ -133,7 +134,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 //
                 manet.scale(panelZoom, panelZoom);
 
-                //
+                // 
                 if (tracer != null) {
 
                     //
@@ -147,7 +148,7 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                     // Draw those polygons over.
                     for (Polygon poly : tracer.getPolygonList()) {
 
-                        //
+                        // If the view is zoomed and you move the mouse into a polygon
                         if (panelZoom > 1 && poly.contains(zoomPos)) {
                             manet.fill(poly);
                         } else if (panelZoom == 1 && poly.contains(mousePos)) {
@@ -160,34 +161,13 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                     // If the Horizontal or Vertical Cut Tool is selected.
                     if (hoverHorizontal || hoverVertical) {
 
-                        // Adjust that point for Zoom
-                        // Hover line
-                        final Point[] points = hoverHorizontal ? tracer.getHorizontalLineTrace(ti, zoomPos) : tracer.getVerticalLineTrace(ti, zoomPos);
-                        manet.setColor(Color.BLACK);
-
-                        // Drawing the line to indicate the cut
-                        if (points[0] != null && points[1] != null) {
-
-                            //
-                            if (points[0].distance(points[1]) > 1) {
-                                //
-                                if (hoverHorizontal) {
-                                    manet.drawLine(points[0].x, points[0].y, points[1].x, points[0].y);
-                                } else if (hoverVertical) {
-                                    manet.drawLine(points[0].x, points[0].y, points[0].x, points[1].y);
-                                }
-
-                                // If either is true.
-                                manet.setColor(Color.BLACK);
-                                manet.fillOval(points[0].x - 2, points[0].y - 2, 4, 4);
-                                manet.fillOval(points[1].x - 2, points[1].y - 2, 4, 4);
-                            }
-                        }
+                        //
+                        drawHoverLines(manet, ti, zoomPos);
                     }
 
                     // Conditional
                     if (tracer.isRunning()) {
-                        
+
                         //
                         final int pntX = tracer.getCurrentX();
                         final int pntY = tracer.getCurrentY();
@@ -246,7 +226,9 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         final Toolkit kit = Toolkit.getDefaultToolkit();
         final Class closs = getClass();
 
+        //
         try {
+
             // Icons.
             iconError = new ImageIcon(ImageIO.read(closs.getResource("/icons/icon-error16.png")));
             iconPlay = new ImageIcon(kit.createImage(closs.getResource("/icons/icon-play24.png")));
@@ -356,13 +338,20 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         //
         final File directory = new File(getClass().getResource("/samples").getFile());
 
+        // Make sure it was found
+        if (!directory.exists()) {
+            return;
+        }
+
         //
         final File[] files = directory.listFiles();
-        final DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode("Images");
-        final DefaultTreeModel model = new DefaultTreeModel(rootNode);
 
-        // If it's there.
+        // Make sure files were found
         if (files != null) {
+
+            //
+            final DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode("Images");
+            final DefaultTreeModel model = new DefaultTreeModel(rootNode);
 
             // Max of eight samples for now. I know wrong way of ever implementing
             // something like this.
@@ -372,32 +361,33 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
                 if (file == null) {
                     break;
                 }
+
                 // Question it first
                 if (file.getAbsolutePath().toLowerCase().endsWith(".png")) {
 
-                    //
-                    BufferedImage image = null;
-
                     // Try
                     try {
-                        image = FormTracer.bufferImage(ImageIO.read(file), this, BufferedImage.TYPE_INT_ARGB);
+
+                        //
+                        final BufferedImage image = FormTracer.bufferImage(ImageIO.read(file), this, BufferedImage.TYPE_INT_ARGB);
+
+                        // Null Check
+                        if (image != null) {
+
+                            //
+                            rootNode.add(new DefaultMutableTreeNode(file));
+
+                            //
+                            selImage = image;
+                        }
                     } catch (IOException ioe) {
 
-                    }
-
-                    // Null Check
-                    if (image != null) {
-
-                        //
-                        rootNode.add(new DefaultMutableTreeNode(file));
-
-                        //
-                        selImage = image;
+                        // Show a Message Dialog if there is an error reading the image.
+                        javax.swing.JOptionPane.showMessageDialog(this, ioe.getMessage());
                     }
                 }
             }
-
-            //
+            // Once the loop is finished, set the model and revalidate the tree.
             importJTree.setModel(model);
             importJTree.revalidate();
         }
@@ -405,13 +395,13 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
     private void changeImage(BufferedImage image) {
 
-        //
-        selImage = image;
-
         // Stop the timer
         timer.stop();
 
         //
+        selImage = image;
+
+        // Create a brand new tracer
         tracer = new FormTracer(image);
         tracer.setPrecision(thresholdJSlider.getValue());
 
@@ -421,11 +411,11 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         verticalJButton.setEnabled(true);
         playJButton.setEnabled(true);
 
-        // Reset the play button to it's play state
+        // Reset the play button to its play state
         playJButton.setIcon(iconPlay);
 
         // Update JLabel
-        int size = tracer.getPolygonList().size();
+        final int size = tracer.getPolygonList().size();
         errorJButton.setText(size > 0 ? String.valueOf(size) : null);
         errorJButton.setIcon(size > 0 && tracer.getMessage() == null ? null : iconError);
 
@@ -438,15 +428,18 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         //
         updatePanelZoom(panelZoom);
 
-        //
+        // @REPAINT
         repaint();
     }
 
     @Override
     public void actionPerformed(ActionEvent evt) {
 
-        // Step
+        // @MAIN PROGRAM START
         tracer.run();
+        
+        //
+        System.out.println("Timer Speed: " +timer.getDelay());
 
         // In the case that you want to watch, the tracer work, more closely.
         if (trackJToggle.isSelected()) {
@@ -525,6 +518,33 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
         // Repaint last, as always.
         repaint();
+    }
+
+    private void drawHoverLines(Graphics2D manet, BufferedImage ti, Point zoomPos) {
+
+        // Adjust that point for Zoom
+        // Hover line
+        final Point[] points = hoverHorizontal ? tracer.getHorizontalLineTrace(ti, zoomPos) : tracer.getVerticalLineTrace(ti, zoomPos);
+        manet.setColor(Color.BLACK);
+
+        // Drawing the line to indicate the cut
+        if (points[0] != null && points[1] != null) {
+
+            //
+            if (points[0].distance(points[1]) > 1) {
+                //
+                if (hoverHorizontal) {
+                    manet.drawLine(points[0].x, points[0].y, points[1].x, points[0].y);
+                } else if (hoverVertical) {
+                    manet.drawLine(points[0].x, points[0].y, points[0].x, points[1].y);
+                }
+
+                // If either is true.
+                manet.setColor(Color.BLACK);
+                manet.fillOval(points[0].x - 2, points[0].y - 2, 4, 4);
+                manet.fillOval(points[1].x - 2, points[1].y - 2, 4, 4);
+            }
+        }
     }
 
     private void drawTextileBackground(Graphics2D manet) {
@@ -820,6 +840,11 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         cameraJButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 cameraJButtonActionPerformed(evt);
+            }
+        });
+        cameraJButton.addKeyListener(new java.awt.event.KeyAdapter() {
+            public void keyPressed(java.awt.event.KeyEvent evt) {
+                cameraJButtonKeyPressed(evt);
             }
         });
         buttonJPanel.add(cameraJButton);
@@ -1156,8 +1181,12 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
     private void reverseJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_reverseJButtonActionPerformed
         // If you want the play speed to run slower then change the max delay.
-        playSpeed = playSpeed * 10 > playDelayMax ? playDelayMax : playSpeed * 10;
-
+        if (playSpeed < 10) {
+            playSpeed = 10;
+        } else {
+            playSpeed = playSpeed * 10 > playDelayMax ? playDelayMax : playSpeed * 10;
+        }
+        
         //
         timer.setDelay(playSpeed);
     }//GEN-LAST:event_reverseJButtonActionPerformed
@@ -1179,8 +1208,15 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
     private void forwardJButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_forwardJButtonActionPerformed
         // If you want it to play faster then comment this out and set the platSpeed below 10.
-        playSpeed = playSpeed / 10 < playDelayMin ? playDelayMin : playSpeed / 10;
-
+        if (playSpeed == playDelayMin) {
+            playSpeed = 1;
+        } else {
+            playSpeed = playSpeed / 10 < playDelayMin ? playDelayMin : playSpeed / 10;
+        }
+        
+        //
+        System.out.println("Timer Delay:" + playSpeed);
+        
         //
         timer.setDelay(playSpeed);
     }//GEN-LAST:event_forwardJButtonActionPerformed
@@ -1205,6 +1241,9 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
 
                 // Open that file.
                 changeImage(ImageIO.read(file));
+
+                // Change the focus to the Play button
+                playJButton.requestFocus();
             } catch (IOException ioe) {
 
                 // Show a JOptionPane with the error
@@ -1236,6 +1275,15 @@ public class TracerJFrame extends javax.swing.JFrame implements ActionListener {
         //
         repaint();
     }//GEN-LAST:event_cameraJButtonActionPerformed
+
+    private void cameraJButtonKeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_cameraJButtonKeyPressed
+        // TODO add your handling code here:
+        // If the Tab Button is pressed move back to the Play Button
+        if (evt.getKeyCode() == KeyEvent.VK_TAB) {
+            playJButton.requestFocus();
+        }
+    }//GEN-LAST:event_cameraJButtonKeyPressed
+
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JPanel buttonJPanel;
     private javax.swing.JButton cameraJButton;

@@ -68,7 +68,7 @@ public class FormTracer {
 
         // Initial point
         setStartPoint();
-        
+
         // Align the current position to that of the startpoint
         curX = startX;
         curY = startY;
@@ -174,7 +174,7 @@ public class FormTracer {
         setStartPoint();
         curX = startX;
         curY = startY;
-        
+
         //
         applyPointMap();
     }
@@ -183,7 +183,7 @@ public class FormTracer {
 
         // Re add those lines you made on the trace image.
         for (Map.Entry<Point, Boolean> map : form.getCutMap().entrySet()) {
-            
+
             // false for horizontal, true for veritcal.
             if (map.getValue()) {
                 addVerticalLine(map.getKey());
@@ -310,9 +310,8 @@ public class FormTracer {
 //                // Add to the list of polygons
 //                form.close();
 //            }
-
             // Renew the trace image with pixels with no connection to other pixels removed.
-            traceImage = destroyAllIslands(clearRegionFromImage(traceImage, form.getActivePolygon(), COLOR_CLEAR));
+            traceImage = destroyNearIslands(clearRegionFromImage(traceImage, form.getActivePolygon(), COLOR_CLEAR));
 
             // Clearing the in progress's image data and setting it to the trace image.
             progImage.flush();
@@ -375,21 +374,21 @@ public class FormTracer {
     private void updatePixelSpace() {
         // We don't consider the center because we're already there.
         // Pixel right
-        fixedArr[0] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY) : 0, curX + 1, curY);
+        fixedArr[0] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX + 1, curY) : 0, curX + 1, curY);
         // Pixel bottom right
-        fixedArr[1] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY + 1) : 0, curX + 1, curY + 1);
+        fixedArr[1] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX + 1, curY + 1) : 0, curX + 1, curY + 1);
         // Pixel bottom
-        fixedArr[2] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX, curY + 1) : 0, curX, curY + 1);
+        fixedArr[2] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX, curY + 1) : 0, curX, curY + 1);
         // Pixel bottom left
-        fixedArr[3] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY + 1) : 0, curX - 1, curY + 1);
+        fixedArr[3] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX - 1, curY + 1) : 0, curX - 1, curY + 1);
         // Pixel left
-        fixedArr[4] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY) : 0, curX - 1, curY);
+        fixedArr[4] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX - 1, curY) : 0, curX - 1, curY);
         // Pixel top left
-        fixedArr[5] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX - 1, curY - 1) : 0, curX - 1, curY - 1);
+        fixedArr[5] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX - 1, curY - 1) : 0, curX - 1, curY - 1);
         // Pixel top
-        fixedArr[6] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX, curY - 1) : 0, curX, curY - 1);
+        fixedArr[6] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX, curY - 1) : 0, curX, curY - 1);
         // Pixel top right
-        fixedArr[7] = new FixedColorUnit(isINB(traceImage, curX, curY) ? testPixel(traceImage, curX + 1, curY - 1) : 0, curX + 1, curY - 1);
+        fixedArr[7] = new FixedColorUnit(inbounds(traceImage, curX, curY) ? insideImage(traceImage, curX + 1, curY - 1) : 0, curX + 1, curY - 1);
     }
 
     // Locates the next empty space, but it depends on which index was last used.
@@ -524,7 +523,7 @@ public class FormTracer {
 
         // Grab the first polygon detected to contains the Point::pos
         for (Polygon p : form.getPolygonList()) {
-            
+
             //
             if (p.contains(pos)) {
                 return p;
@@ -568,6 +567,45 @@ public class FormTracer {
 
         //
         return output;
+    }
+
+    private BufferedImage destroyNearIslands(BufferedImage img) {
+
+        //
+        final int markerSize = 3;
+        final Point[] points = new Point[8];
+
+        // Create a marker about the cursor position
+        for (int i = 0; i < markerSize; i++) {
+
+            // Identify the points around the Cursor
+            points[0] = new Point(curX, curY - i);
+            points[1] = new Point(curX + i, curY - i);
+            points[2] = new Point(curX + i, curY);
+            points[3] = new Point(curX + i, curY + i);
+            points[4] = new Point(curX, curY + i);
+            points[5] = new Point(curX - i, curY + i);
+            points[6] = new Point(curX - i, curY);
+            points[7] = new Point(curX - i, curY - i);
+
+            // Iterate over those and set them to Clear
+            for (Point p : points) {
+
+                // As long as the point is within the bounds of the image.
+                if (p.x > 0 && p.x < img.getWidth() && p.y > 0 && p.y < img.getHeight()) {
+                    
+                    // If the pixel about the cursor is transparent
+                    if (isTransparent(img.getRGB(p.x, p.y))) {
+
+                        // Remove it
+                        img.setRGB(p.x, p.y, COLOR_CLEAR);
+                    }
+                }
+            }
+        }
+
+        // Return the edited image.
+        return img;
     }
 
     /**
@@ -773,30 +811,30 @@ public class FormTracer {
 
     public Point[] getHorizontalLineTrace(BufferedImage img, Point mouse) {
 
-        //
+        // Our start and end point of the linear trace
         final Point[] point = new Point[2];
 
-        //
+        // Vars
         int x1, mx, my, width, height;
 
-        //
+        // Assignment
         width = img.getWidth();
         height = img.getHeight();
 
-        //
+        // Make sure the position of the mouse is within the bounds of the image.
         mx = (mouse.x > width - 1 || mouse.x < 0) ? width - 1 : mouse.x;
         my = (mouse.y > height - 1 || mouse.y < 0) ? height - 1 : mouse.y;
 
-        //
+        // Start where the mouse is and move from the opposite end of the image towards the mouse
         for (x1 = mx; x1 >= 0; x1--) {
 
-            //
+            // If you find anything transparent at all that is the endpoint
             if (isTransparent(img.getRGB(x1, my))) {
                 point[0] = new Point(x1, my);
                 break;
             }
 
-            //
+            // If the mouse is at the first pixel in the image and its opaque then start there.
             if (x1 == 0 && !isTransparent(img.getRGB(0, my))) {
                 point[0] = new Point(0, my);
             }
@@ -821,17 +859,17 @@ public class FormTracer {
             }
         }
 
-        //
+        // Return the points
         return point;
     }
 
     // This pixel must be within the image bounds ; returns the rgb at point as well.
-    private int testPixel(BufferedImage img, int x, int y) {
+    private int insideImage(BufferedImage img, int x, int y) {
         return x <= img.getWidth() - 1 && y <= img.getHeight() - 1 && x >= 0 && y >= 0 ? img.getRGB(x, y) : 0;
     }
 
     // Checking if the test point is within bounds; convience method.
-    private boolean isINB(BufferedImage img, int x, int y) {
+    private boolean inbounds(BufferedImage img, int x, int y) {
         return x <= img.getWidth() - 1 && y <= img.getHeight() - 1 && x >= 0 && y >= 0;
     }
 
